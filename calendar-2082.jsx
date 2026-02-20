@@ -1,13 +1,6 @@
 import { useState } from "react";
-import {
-  MonthCalendar,
-  DateInput,
-  sameDay,
-  formatDate,
-  formatLong,
-  parseMMDD,
-  MONTHS_AD,
-} from "./calendar.jsx";
+import { CalendarRange } from "lucide-react";
+import { MonthCalendar, DateInput } from "./calendar.jsx";
 
 const BS_2082 = {
   year_bs: 2082,
@@ -29,6 +22,52 @@ const BS_2082 = {
 };
 
 const ONE_DAY_MS = 86400000;
+
+/** Parse "MM/DD" as B.S. month (1–12) and day; return AD Date or null. */
+function parseBSMMDD(str) {
+  if (!str) return null;
+  const clean = str.replace(/[^\d]/g, "");
+  if (clean.length !== 4) return null;
+  const monthNum = parseInt(clean.slice(0, 2), 10);
+  const dayNum = parseInt(clean.slice(2, 4), 10);
+  if (monthNum < 1 || monthNum > 12) return null;
+  const month = BS_2082.months[monthNum - 1];
+  if (dayNum < 1 || dayNum > month.days) return null;
+  const startTs = new Date(month.starts_ad).getTime();
+  return new Date(startTs + (dayNum - 1) * ONE_DAY_MS);
+}
+
+/** Given an AD Date, return B.S. "MM/DD" (month 01–12, day). */
+function formatDateBS(date) {
+  if (!date) return "";
+  const ad = date.getTime();
+  for (let i = 0; i < BS_2082.months.length; i++) {
+    const m = BS_2082.months[i];
+    const startTs = new Date(m.starts_ad).getTime();
+    const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
+    if (ad >= startTs && ad <= endTs) {
+      const day = Math.floor((ad - startTs) / ONE_DAY_MS) + 1;
+      return `${(i + 1).toString().padStart(2, "0")}/${day.toString().padStart(2, "0")}`;
+    }
+  }
+  return "";
+}
+
+/** Given an AD Date, return B.S. long label e.g. "Baishakh 1". */
+function formatLongBS(date) {
+  if (!date) return "";
+  const ad = date.getTime();
+  for (let i = 0; i < BS_2082.months.length; i++) {
+    const m = BS_2082.months[i];
+    const startTs = new Date(m.starts_ad).getTime();
+    const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
+    if (ad >= startTs && ad <= endTs) {
+      const day = Math.floor((ad - startTs) / ONE_DAY_MS) + 1;
+      return `${m.name_en} ${day}`;
+    }
+  }
+  return "";
+}
 
 function buildBSCells(month) {
   const startDate = new Date(month.starts_ad);
@@ -53,12 +92,12 @@ export default function Calendar2082() {
   const [rangeEnd, setRangeEnd] = useState(null);
   const [hoverDate, setHoverDate] = useState(null);
   const [selecting, setSelecting] = useState(false);
-
-  const yearAdForInput = 2026;
+  const [showDaysInput, setShowDaysInput] = useState(false);
+  const [daysInput, setDaysInput] = useState("");
 
   function handleStartChange(v) {
     setStartInput(v);
-    const d = parseMMDD(v, yearAdForInput);
+    const d = parseBSMMDD(v);
     if (d) {
       setRangeStart(d);
       setSelecting(true);
@@ -72,7 +111,7 @@ export default function Calendar2082() {
 
   function handleEndChange(v) {
     setEndInput(v);
-    const d = parseMMDD(v, yearAdForInput);
+    const d = parseBSMMDD(v);
     if (d) setRangeEnd(d);
     else if (!v) setRangeEnd(null);
     if (d) setSelecting(false);
@@ -82,12 +121,12 @@ export default function Calendar2082() {
     if (!rangeStart || (rangeStart && rangeEnd)) {
       setRangeStart(date);
       setRangeEnd(null);
-      setStartInput(formatDate(date));
+      setStartInput(formatDateBS(date));
       setEndInput("");
       setSelecting(true);
     } else {
       setRangeEnd(date);
-      setEndInput(formatDate(date));
+      setEndInput(formatDateBS(date));
       setSelecting(false);
     }
   }
@@ -104,6 +143,22 @@ export default function Calendar2082() {
     setEndInput("");
     setSelecting(false);
     setHoverDate(null);
+  }
+
+  function applyDaysRange() {
+    const n = parseInt(daysInput, 10);
+    if (!Number.isInteger(n) || n < 1 || n > 999) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + n - 1);
+    setRangeStart(today);
+    setRangeEnd(endDate);
+    setStartInput(formatDateBS(today));
+    setEndInput(formatDateBS(endDate));
+    setSelecting(false);
+    setShowDaysInput(false);
+    setDaysInput("");
   }
 
   const hasRange = rangeStart && rangeEnd;
@@ -182,7 +237,7 @@ export default function Calendar2082() {
             label="Start"
             value={startInput}
             onChange={handleStartChange}
-            placeholder="MM/DD"
+            placeholder="MM/DD (B.S.)"
             active={!rangeStart}
           />
           <div
@@ -199,7 +254,7 @@ export default function Calendar2082() {
             label="End"
             value={endInput}
             onChange={handleEndChange}
-            placeholder="MM/DD"
+            placeholder="MM/DD (B.S.)"
             active={selecting && !!rangeStart && !rangeEnd}
           />
           {(rangeStart || startInput) && (
@@ -221,6 +276,65 @@ export default function Calendar2082() {
             >
               ✕
             </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowDaysInput((v) => !v)}
+            title="Set range by days"
+            style={{
+              background: showDaysInput ? "rgba(245,166,35,0.15)" : "transparent",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "10px",
+              padding: "12px 13px",
+              color: showDaysInput ? "#e8d5b7" : "rgba(232,213,183,0.4)",
+              cursor: "pointer",
+              flexShrink: 0,
+              alignSelf: "flex-end",
+              fontFamily: "inherit",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <CalendarRange size={18} />
+          </button>
+          {showDaysInput && (
+            <div className="days-input-wrap" style={{ display: "flex", flexDirection: "column", gap: "6px", flex: "0 0 auto", minWidth: "80px" }}>
+              <label
+                style={{
+                  fontSize: "10px",
+                  letterSpacing: "0.2em",
+                  textTransform: "uppercase",
+                  color: "rgba(245,166,35,0.45)",
+                  fontFamily: "'DM Mono', monospace",
+                }}
+              >
+                Days
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={daysInput}
+                onChange={(e) => setDaysInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                onBlur={applyDaysRange}
+                onKeyDown={(e) => e.key === "Enter" && applyDaysRange()}
+                placeholder="50"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "10px",
+                  padding: "12px 0",
+                  color: "#e8d5b7",
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: "20px",
+                  letterSpacing: "0.08em",
+                  outline: "none",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  textAlign: "center",
+                }}
+              />
+            </div>
           )}
         </div>
 
@@ -257,7 +371,7 @@ export default function Calendar2082() {
                   display: "inline-block",
                 }}
               />
-              {formatLong(displayStart, MONTHS_AD)} → {formatLong(displayEnd, MONTHS_AD)}
+              {formatLongBS(displayStart)} → {formatLongBS(displayEnd)}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
               <span style={{ color: "rgba(232,213,183,0.55)" }}>{days} days</span>
             </div>
@@ -280,7 +394,7 @@ export default function Calendar2082() {
                 letterSpacing: "0.04em",
               }}
             >
-              Enter MM/DD above or click any date on the calendar
+              Enter B.S. MM/DD above or click any date on the calendar
             </div>
           )}
         </div>
@@ -359,6 +473,7 @@ export default function Calendar2082() {
         .calendar-grid { grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); }
         @media (max-width: 768px) {
           .calendar-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+          .days-input-wrap { max-width: 80px; width: 80px; }
         }
         @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:.9} }
         input::placeholder { color: rgba(232,213,183,0.18); }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CalendarRange } from "lucide-react";
 import {
   MonthCalendar,
   DateInput,
@@ -33,6 +34,8 @@ export default function Calendar2026() {
   const [rangeEnd, setRangeEnd] = useState(null);
   const [hoverDate, setHoverDate] = useState(null);
   const [selecting, setSelecting] = useState(false);
+  const [showDaysInput, setShowDaysInput] = useState(false);
+  const [daysInput, setDaysInput] = useState("");
 
   function handleStartChange(v) {
     setStartInput(v);
@@ -82,6 +85,22 @@ export default function Calendar2026() {
     setEndInput("");
     setSelecting(false);
     setHoverDate(null);
+  }
+
+  function applyDaysRange() {
+    const n = parseInt(daysInput, 10);
+    if (!Number.isInteger(n) || n < 1 || n > 999) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + n - 1);
+    setRangeStart(today);
+    setRangeEnd(endDate);
+    setStartInput(formatDate(today));
+    setEndInput(formatDate(endDate));
+    setSelecting(false);
+    setShowDaysInput(false);
+    setDaysInput("");
   }
 
   const hasRange = rangeStart && rangeEnd;
@@ -199,6 +218,65 @@ export default function Calendar2026() {
             >
               ✕
             </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowDaysInput((v) => !v)}
+            title="Set range by days"
+            style={{
+              background: showDaysInput ? "rgba(245,166,35,0.15)" : "transparent",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "10px",
+              padding: "12px 13px",
+              color: showDaysInput ? "#e8d5b7" : "rgba(232,213,183,0.4)",
+              cursor: "pointer",
+              flexShrink: 0,
+              alignSelf: "flex-end",
+              fontFamily: "inherit",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <CalendarRange size={18} />
+          </button>
+          {showDaysInput && (
+            <div className="days-input-wrap" style={{ display: "flex", flexDirection: "column", gap: "6px", flex: "0 0 auto", minWidth: "80px" }}>
+              <label
+                style={{
+                  fontSize: "10px",
+                  letterSpacing: "0.2em",
+                  textTransform: "uppercase",
+                  color: "rgba(245,166,35,0.45)",
+                  fontFamily: "'DM Mono', monospace",
+                }}
+              >
+                Days
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={daysInput}
+                onChange={(e) => setDaysInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                onBlur={applyDaysRange}
+                onKeyDown={(e) => e.key === "Enter" && applyDaysRange()}
+                placeholder="50"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "10px",
+                  padding: "12px 0",
+                  color: "#e8d5b7",
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: "20px",
+                  letterSpacing: "0.08em",
+                  outline: "none",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  textAlign: "center",
+                }}
+              />
+            </div>
           )}
         </div>
 
@@ -337,6 +415,7 @@ export default function Calendar2026() {
         .calendar-grid { grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); }
         @media (max-width: 768px) {
           .calendar-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+          .days-input-wrap { max-width: 80px; width: 80px; }
         }
         @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:.9} }
         input::placeholder { color: rgba(232,213,183,0.18); }
