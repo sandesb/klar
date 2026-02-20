@@ -184,6 +184,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
 
   return (
     <div
+      className="calendar-page"
       style={{
         fontFamily: "'DM Mono', monospace",
         padding: "36px 24px 60px",
@@ -517,6 +518,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
       <style>{`
         .calendar-grid { grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); }
         @media (max-width: 768px) {
+          .calendar-page { padding-left: 20px !important; padding-right: 20px !important; }
           .calendar-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
           .days-input-wrap { max-width: 80px; width: 80px; }
           .brand-title { font-size: clamp(56px, 18vw, 80px) !important; }
