@@ -8,7 +8,6 @@ function CalendarToggle({ isBS, onSwitch }) {
   return (
     <div
       style={{
-        background: "linear-gradient(135deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)",
         paddingTop: "16px",
         paddingBottom: "8px",
         display: "flex",
@@ -63,7 +62,7 @@ function App() {
   const [isBS, setIsBS] = useState(false);
   const [lockedRange, setLockedRange] = useState(null); // { start: Date, end: Date } when locked
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(0deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)" }}>
       <CalendarToggle isBS={isBS} onSwitch={setIsBS} />
       {isBS ? (
         <Calendar2082 lockedRange={lockedRange} onLockRange={setLockedRange} />

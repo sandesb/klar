@@ -137,6 +137,44 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       />
 
       <div style={{ textAlign: "center", marginBottom: "32px" }}>
+      <h1
+          style={{
+            fontFamily: "'Playfair Display', serif",
+            fontSize: "clamp(48px,8vw,90px)",
+            color: "#e8d5b7",
+            margin: 0,
+            letterSpacing: "-0.02em",
+            lineHeight: 1,
+            textShadow: "0 10px 60px rgba(115, 114, 117, 0.73)",
+          }}
+        >
+          Klar'y
+        </h1>
+        <div
+          style={{
+            fontSize: "10px",
+            letterSpacing: "0.3em",
+            color: "rgba(245,166,35,0.5)",
+            textTransform: "uppercase",
+            marginTop: "20px",
+          }}
+        >
+          · A Calendar App By Sandy ·
+        </div>
+    
+      <h1
+          style={{
+            fontFamily: "'Playfair Display', serif",
+            fontSize: "clamp(42px,8vw,90px)",
+            color: "#e8d5b7",
+            margin: 0,
+            letterSpacing: "-0.02em",
+            lineHeight: 1,
+            textShadow: "0 -80px 120px rgba(187, 187, 187, 0.37)",
+          }}
+        >
+          {YEAR}
+        </h1>
         <div
           style={{
             fontSize: "10px",
@@ -148,32 +186,9 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
         >
           Year at a Glance
         </div>
-        <h1
-          style={{
-            fontFamily: "'Playfair Display', serif",
-            fontSize: "clamp(48px,8vw,90px)",
-            color: "#e8d5b7",
-            margin: 0,
-            letterSpacing: "-0.02em",
-            lineHeight: 1,
-            textShadow: "0 0 60px rgba(245,166,35,0.15)",
-          }}
-        >
-          Klar.y
-        </h1>
-        <h1
-          style={{
-            fontFamily: "'Playfair Display', serif",
-            fontSize: "clamp(42px,8vw,90px)",
-            color: "#e8d5b7",
-            margin: 0,
-            letterSpacing: "-0.02em",
-            lineHeight: 1,
-            textShadow: "0 0 60px rgba(245,166,35,0.15)",
-          }}
-        >
-          {YEAR}
-        </h1>
+
+        
+    
       </div>
 
       <div
