@@ -159,7 +159,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
             textShadow: "0 0 60px rgba(245,166,35,0.15)",
           }}
         >
-          Klar
+          Klar.y
         </h1>
         <h1
           style={{
