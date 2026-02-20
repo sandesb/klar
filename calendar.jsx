@@ -146,7 +146,7 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
   );
 }
 
-export function DateInput({ label, value, onChange, placeholder, active }) {
+export function DateInput({ label, value, onChange, placeholder, active, disabled }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: 1 }}>
       <label style={{
@@ -159,6 +159,7 @@ export function DateInput({ label, value, onChange, placeholder, active }) {
         inputMode="numeric"
         maxLength={5}
         value={value}
+        disabled={disabled}
         onChange={e => {
           let v = e.target.value.replace(/[^\d/]/g, "").replace(/\//g, "");
           if (v.length > 2) v = v.slice(0, 2) + "/" + v.slice(2, 4);

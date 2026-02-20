@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarRange } from "lucide-react";
+import { CalendarRange, Lock, LockOpen } from "lucide-react";
 import { MonthCalendar, DateInput } from "./calendar.jsx";
 
 const BS_2082 = {
@@ -85,7 +85,7 @@ function buildBSCells(month) {
   return cells;
 }
 
-export default function Calendar2082() {
+export default function Calendar2082({ lockedRange, onLockRange }) {
   const [startInput, setStartInput] = useState("");
   const [endInput, setEndInput] = useState("");
   const [rangeStart, setRangeStart] = useState(null);
@@ -171,6 +171,17 @@ export default function Calendar2082() {
     days = Math.round((displayEnd - displayStart) / ONE_DAY_MS) + 1;
   }
 
+  const effectiveRange = lockedRange
+    ? { start: lockedRange.start, end: lockedRange.end }
+    : hasRange
+      ? { start: displayStart, end: displayEnd }
+      : null;
+  const effectiveStart = effectiveRange?.start ?? null;
+  const effectiveEnd = effectiveRange?.end ?? null;
+  const effectiveDays = effectiveRange
+    ? Math.round((effectiveEnd - effectiveStart) / ONE_DAY_MS) + 1
+    : 0;
+
   return (
     <div
       style={{
@@ -235,10 +246,11 @@ export default function Calendar2082() {
         <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
           <DateInput
             label="Start"
-            value={startInput}
+            value={lockedRange ? formatDateBS(effectiveStart) : startInput}
             onChange={handleStartChange}
             placeholder="MM/DD (B.S.)"
-            active={!rangeStart}
+            active={!lockedRange && !rangeStart}
+            disabled={!!lockedRange}
           />
           <div
             style={{
@@ -252,10 +264,11 @@ export default function Calendar2082() {
           </div>
           <DateInput
             label="End"
-            value={endInput}
+            value={lockedRange ? formatDateBS(effectiveEnd) : endInput}
             onChange={handleEndChange}
             placeholder="MM/DD (B.S.)"
-            active={selecting && !!rangeStart && !rangeEnd}
+            active={!lockedRange && selecting && !!rangeStart && !rangeEnd}
+            disabled={!!lockedRange}
           />
           {(rangeStart || startInput) && (
             <button
@@ -346,7 +359,7 @@ export default function Calendar2082() {
             justifyContent: "center",
           }}
         >
-          {hasRange ? (
+          {effectiveRange ? (
             <div
               style={{
                 display: "flex",
@@ -371,9 +384,27 @@ export default function Calendar2082() {
                   display: "inline-block",
                 }}
               />
-              {formatLongBS(displayStart)} → {formatLongBS(displayEnd)}
+              {formatLongBS(effectiveStart)} → {formatLongBS(effectiveEnd)}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
-              <span style={{ color: "rgba(232,213,183,0.55)" }}>{days} days</span>
+              <span style={{ color: "rgba(232,213,183,0.55)" }}>{effectiveDays} days</span>
+              <button
+                type="button"
+                onClick={() => (lockedRange ? onLockRange(null) : onLockRange({ start: effectiveStart, end: effectiveEnd }))}
+                title={lockedRange ? "Unlock range" : "Lock range to view in A.D / B.S"}
+                style={{
+                  marginLeft: "4px",
+                  background: "transparent",
+                  border: "none",
+                  padding: "4px",
+                  cursor: "pointer",
+                  color: lockedRange ? "#f5a623" : "rgba(232,213,183,0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {lockedRange ? <Lock size={16} /> : <LockOpen size={16} />}
+              </button>
             </div>
           ) : selecting && rangeStart ? (
             <div
@@ -414,8 +445,8 @@ export default function Calendar2082() {
             key={month.index}
             monthLabel={month.name_en}
             cells={buildBSCells(month)}
-            rangeStart={rangeStart}
-            rangeEnd={rangeEnd}
+            rangeStart={effectiveStart}
+            rangeEnd={effectiveEnd}
             hoverDate={hoverDate}
             onDayClick={handleDayClick}
             onDayHover={handleDayHover}
