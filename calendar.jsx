@@ -101,7 +101,7 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
           const isWeekend = date.getDay() === 0 || date.getDay() === 6;
           const col = date.getDay();
 
-          let borderRadius = "50%";
+          let borderRadius = "25px";
           if (inR && !isEdgeDay) {
             if (col === 0) borderRadius = "50% 0 0 50%";
             else if (col === 6) borderRadius = "0 50% 50% 0";
