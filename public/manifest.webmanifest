@@ -1,0 +1,31 @@
+{
+  "name": "Klary — Calendar By Sandy",
+  "short_name": "Klary",
+  "description": "A.D. and B.S. calendar app. Pick date ranges, lock and view in either timeline.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#1a0e00",
+  "background_color": "#0d0805",
+  "icons": [
+    {
+      "src": "/klarypng.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/klarypng.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/klaryico.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon",
+      "purpose": "any"
+    }
+  ]
+}
