@@ -2,31 +2,51 @@ import { useState } from "react";
 import {
   MonthCalendar,
   DateInput,
+  sameDay,
   formatDate,
   formatLong,
   parseMMDD,
-  getDaysInMonth,
-  getFirstDayOfMonth,
   MONTHS_AD,
 } from "./calendar.jsx";
 
-const YEAR = 2026;
+const BS_2082 = {
+  year_bs: 2082,
+  country: "Nepal",
+  months: [
+    { index: 1, name_en: "Baishakh", name_ne: "वैशाख", days: 31, starts_ad: "2025-04-14" },
+    { index: 2, name_en: "Jestha", name_ne: "जेठ", days: 31, starts_ad: "2025-05-15" },
+    { index: 3, name_en: "Ashadh", name_ne: "असार", days: 32, starts_ad: "2025-06-15" },
+    { index: 4, name_en: "Shrawan", name_ne: "साउन", days: 32, starts_ad: "2025-07-17" },
+    { index: 5, name_en: "Bhadra", name_ne: "भदौ", days: 31, starts_ad: "2025-08-18" },
+    { index: 6, name_en: "Ashwin", name_ne: "असोज", days: 30, starts_ad: "2025-09-18" },
+    { index: 7, name_en: "Kartik", name_ne: "कात्तिक", days: 30, starts_ad: "2025-10-18" },
+    { index: 8, name_en: "Mangsir", name_ne: "मंसिर", days: 29, starts_ad: "2025-11-17" },
+    { index: 9, name_en: "Poush", name_ne: "पुष", days: 29, starts_ad: "2025-12-16" },
+    { index: 10, name_en: "Magh", name_ne: "माघ", days: 30, starts_ad: "2026-01-14" },
+    { index: 11, name_en: "Falgun", name_ne: "फागुन", days: 30, starts_ad: "2026-02-13" },
+    { index: 12, name_en: "Chaitra", name_ne: "चैत", days: 30, starts_ad: "2026-03-15" },
+  ],
+};
 
-function buildADCells(year, monthIdx) {
-  const daysInMonth = getDaysInMonth(year, monthIdx);
-  const firstDay = getFirstDayOfMonth(year, monthIdx);
+const ONE_DAY_MS = 86400000;
+
+function buildBSCells(month) {
+  const startDate = new Date(month.starts_ad);
+  const startTs = startDate.getTime();
+  const firstDay = startDate.getDay();
+  const days = month.days;
   const cells = [];
   for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) {
+  for (let d = 1; d <= days; d++) {
     cells.push({
-      date: new Date(year, monthIdx, d),
+      date: new Date(startTs + (d - 1) * ONE_DAY_MS),
       dayNum: d,
     });
   }
   return cells;
 }
 
-export default function Calendar2026() {
+export default function Calendar2082() {
   const [startInput, setStartInput] = useState("");
   const [endInput, setEndInput] = useState("");
   const [rangeStart, setRangeStart] = useState(null);
@@ -34,9 +54,11 @@ export default function Calendar2026() {
   const [hoverDate, setHoverDate] = useState(null);
   const [selecting, setSelecting] = useState(false);
 
+  const yearAdForInput = 2026;
+
   function handleStartChange(v) {
     setStartInput(v);
-    const d = parseMMDD(v, YEAR);
+    const d = parseMMDD(v, yearAdForInput);
     if (d) {
       setRangeStart(d);
       setSelecting(true);
@@ -50,7 +72,7 @@ export default function Calendar2026() {
 
   function handleEndChange(v) {
     setEndInput(v);
-    const d = parseMMDD(v, YEAR);
+    const d = parseMMDD(v, yearAdForInput);
     if (d) setRangeEnd(d);
     else if (!v) setRangeEnd(null);
     if (d) setSelecting(false);
@@ -91,7 +113,7 @@ export default function Calendar2026() {
   if (hasRange) {
     displayStart = rangeStart < rangeEnd ? rangeStart : rangeEnd;
     displayEnd = rangeStart < rangeEnd ? rangeEnd : rangeStart;
-    days = Math.round((displayEnd - displayStart) / (1000 * 60 * 60 * 24)) + 1;
+    days = Math.round((displayEnd - displayStart) / ONE_DAY_MS) + 1;
   }
 
   return (
@@ -116,7 +138,7 @@ export default function Calendar2026() {
             marginBottom: "10px",
           }}
         >
-          Year at a Glance
+          Year at a Glance · B.S.
         </div>
         <h1
           style={{
@@ -142,7 +164,7 @@ export default function Calendar2026() {
             textShadow: "0 0 60px rgba(245,166,35,0.15)",
           }}
         >
-          {YEAR}
+          {BS_2082.year_bs}
         </h1>
       </div>
 
@@ -235,7 +257,7 @@ export default function Calendar2026() {
                   display: "inline-block",
                 }}
               />
-              {formatLong(displayStart)} → {formatLong(displayEnd)}
+              {formatLong(displayStart, MONTHS_AD)} → {formatLong(displayEnd, MONTHS_AD)}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
               <span style={{ color: "rgba(232,213,183,0.55)" }}>{days} days</span>
             </div>
@@ -273,11 +295,11 @@ export default function Calendar2026() {
           gap: "12px",
         }}
       >
-        {MONTHS_AD.map((monthName, i) => (
+        {BS_2082.months.map((month, i) => (
           <MonthCalendar
-            key={i}
-            monthLabel={monthName}
-            cells={buildADCells(YEAR, i)}
+            key={month.index}
+            monthLabel={month.name_en}
+            cells={buildBSCells(month)}
             rangeStart={rangeStart}
             rangeEnd={rangeEnd}
             hoverDate={hoverDate}
