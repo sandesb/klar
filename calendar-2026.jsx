@@ -138,6 +138,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
 
       <div style={{ textAlign: "center", marginBottom: "32px" }}>
       <h1
+          className="brand-title"
           style={{
             fontFamily: "'Playfair Display', serif",
             fontSize: "clamp(48px,8vw,90px)",
@@ -148,7 +149,9 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
             textShadow: "0 10px 60px rgba(115, 114, 117, 0.73)",
           }}
         >
-          Klar'y
+          Klar
+          <span style={{ color: "rgba(245, 165, 35, 0.8)" }}>'</span>
+          y
         </h1>
         <div
           style={{
@@ -163,6 +166,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
         </div>
     
       <h1
+                className="brand-title"
           style={{
             fontFamily: "'Playfair Display', serif",
             fontSize: "clamp(42px,8vw,90px)",
@@ -462,6 +466,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
         @media (max-width: 768px) {
           .calendar-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
           .days-input-wrap { max-width: 80px; width: 80px; }
+          .brand-title { font-size: clamp(56px, 18vw, 80px) !important; }
         }
         @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:.9} }
         input::placeholder { color: rgba(232,213,183,0.18); }
