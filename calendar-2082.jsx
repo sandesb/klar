@@ -643,7 +643,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
             textAlign: "center",
             marginTop: "8px",
             marginBottom: "12px",
-            fontFamily: "'Playfair Display', serif",
+            fontFamily: "'DM Mono', monospace",
             fontSize: "18px",
             color: "rgba(245,166,35,0.9)",
             letterSpacing: "0.04em",

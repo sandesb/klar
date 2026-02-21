@@ -17,6 +17,12 @@ export function sameDay(a, b) {
   return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+/** Local date key YYYY-MM-DD for override lookups */
+export function toDateKey(d) {
+  if (!d) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function formatDate(d) {
   if (!d) return "";
   return `${(d.getMonth() + 1).toString().padStart(2, "0")}/${d.getDate().toString().padStart(2, "0")}`;
@@ -44,8 +50,10 @@ export function parseMMDD(str, year = 2026) {
  * cells: array of null (empty cell) or { date: Date, dayNum: number }
  * excludeWeekends: Mon–Fri working, Sat/Sun red
  * customWorkingDays: first N days of week (0..N-1) are working (blue); rest + Sat always red
+ * deducted/added: date keys (YYYY-MM-DD) for review-mode overrides (red/blue)
+ * isReviewMode: dates in range are clickable to toggle blue/yellow/red (Saturdays locked yellow)
  */
-export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDate, onDayClick, onDayHover, excludeWeekends, customWorkingDays }) {
+export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDate, onDayClick, onDayHover, excludeWeekends, customWorkingDays, deducted = [], added = [], isReviewMode = false, onDayToggle = () => {} }) {
   const today = new Date();
   const effectiveEnd = rangeEnd || hoverDate;
 
@@ -102,9 +110,30 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
           const isToday = date.toDateString() === today.toDateString();
           const isWeekend = date.getDay() === 0 || date.getDay() === 6;
           const col = date.getDay();
-          const isExcludedWeekend = excludeWeekends && inR && isWeekend;
-          const isCustomWorking = customWorkingDays != null && inR && col < customWorkingDays && col !== 6;
-          const isCustomExcluded = customWorkingDays != null && inR && col === 6;
+          const isSaturday = col === 6;
+          const dateKey = toDateKey(date);
+          const isDeducted = isReviewMode && inR && deducted.includes(dateKey);
+          const isAdded = isReviewMode && inR && added.includes(dateKey);
+          const saturdayLockedRed = isReviewMode && inR && isSaturday;
+
+          let isExcludedWeekend = excludeWeekends && inR && isWeekend;
+          let isCustomWorking = customWorkingDays != null && inR && col < customWorkingDays && col !== 6;
+          let isCustomExcluded = customWorkingDays != null && inR && col === 6;
+          if (isReviewMode && inR) {
+            if (saturdayLockedRed) {
+              isCustomExcluded = true;
+              isCustomWorking = false;
+              isExcludedWeekend = false;
+            } else if (isDeducted) {
+              isCustomWorking = false;
+              isCustomExcluded = true;
+              isExcludedWeekend = false;
+            } else if (isAdded) {
+              isCustomExcluded = false;
+              isCustomWorking = true;
+              isExcludedWeekend = false;
+            }
+          }
 
           let borderRadius = "25px";
           if (inR && !isEdgeDay) {
@@ -113,10 +142,20 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
             else borderRadius = "0";
           }
 
+          function handleDayInteraction(e) {
+            if (e.type === "touchend") e.preventDefault();
+            if (isReviewMode) {
+              if (inR && !isSaturday) onDayToggle(date);
+            } else {
+              onDayClick(date);
+            }
+          }
+
           return (
             <div
               key={`${i}-${dayNum}`}
-              onClick={() => onDayClick(date)}
+              onClick={handleDayInteraction}
+              onTouchEnd={handleDayInteraction}
               onMouseEnter={() => onDayHover(date)}
               onMouseLeave={() => onDayHover(null)}
               style={{

@@ -1,9 +1,10 @@
 import { useState, useRef } from "react";
-import { CalendarRange, Lock, LockOpen, CalendarMinus, CalendarPlus } from "lucide-react";
+import { CalendarRange, Lock, LockOpen, CalendarMinus, CalendarPlus, RefreshCw } from "lucide-react";
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
 import SaveRangeDialog from "./components/SaveRangeDialog.jsx";
 import SavedRangesDialog from "./components/SavedRangesDialog.jsx";
-import { loadSavedRanges, saveSavedRange, deleteSavedRange } from "./savedRangesStorage.js";
+import toast from "react-hot-toast";
+import { loadSavedRanges, saveSavedRange, deleteSavedRange, updateSavedRange } from "./savedRangesStorage.js";
 import {
   MonthCalendar,
   DateInput,
@@ -13,6 +14,7 @@ import {
   getDaysInMonth,
   getFirstDayOfMonth,
   MONTHS_AD,
+  toDateKey,
 } from "./calendar.jsx";
 
 const YEAR = 2026;
@@ -48,6 +50,9 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const [savedRanges, setSavedRanges] = useState(() => loadSavedRanges());
   const [showSavedRangesDialog, setShowSavedRangesDialog] = useState(false);
   const [savedRangeTitle, setSavedRangeTitle] = useState(null);
+  const [savedRangeId, setSavedRangeId] = useState(null);
+  const [localDeducted, setLocalDeducted] = useState([]);
+  const [localAdded, setLocalAdded] = useState([]);
   const lockLongPressTimer = useRef(null);
   const lockLongPressFired = useRef(false);
   const lockLongPressJustFired = useRef(false);
@@ -150,6 +155,9 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     setExcludeWeekends(false);
     onLockRange({ start, end });
     setSavedRangeTitle(entry.title);
+    setSavedRangeId(entry.id);
+    setLocalDeducted(Array.isArray(entry.deducted) ? entry.deducted : []);
+    setLocalAdded(Array.isArray(entry.added) ? entry.added : []);
     setShowSavedRangesDialog(false);
   }
 
@@ -201,6 +209,10 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     setEndInput("");
     setSelecting(false);
     setHoverDate(null);
+    setSavedRangeTitle(null);
+    setSavedRangeId(null);
+    setLocalDeducted([]);
+    setLocalAdded([]);
   }
 
   function applyDaysRange() {
@@ -244,6 +256,68 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     : effectiveRange && excludeWeekends
       ? countWeekdays(effectiveStart, effectiveEnd)
       : totalDays;
+
+  function dateInRange(dateKey) {
+    if (!effectiveStart || !effectiveEnd) return false;
+    const [y, m, d] = dateKey.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt >= effectiveStart && dt <= effectiveEnd;
+  }
+  const deductedInRange = localDeducted.filter(dateInRange).length;
+  const addedInRange = localAdded.filter(dateInRange).length;
+  const adjustedWorkingDays = effectiveRange
+    ? effectiveDays - deductedInRange + addedInRange
+    : effectiveDays;
+
+  function isBaseWorkingDay(date) {
+    if (!effectiveStart || !effectiveEnd || !date) return false;
+    const t = date.getTime();
+    if (t < effectiveStart.getTime() || t > effectiveEnd.getTime()) return false;
+    const col = date.getDay();
+    if (customWorkingDays != null) return col < customWorkingDays && col !== 6;
+    if (excludeWeekends) return col !== 0 && col !== 6;
+    return false;
+  }
+
+  function isBaseYellowDay(date) {
+    if (!effectiveStart || !effectiveEnd || !date) return false;
+    const t = date.getTime();
+    if (t < effectiveStart.getTime() || t > effectiveEnd.getTime()) return false;
+    const col = date.getDay();
+    if (customWorkingDays != null) return col >= customWorkingDays || col === 6;
+    if (excludeWeekends) return col === 0 || col === 6;
+    return false;
+  }
+
+  function handleDayToggle(date) {
+    if (!savedRangeId || !effectiveStart || !effectiveEnd) return;
+    if (date.getDay() === 6) return;
+    const key = toDateKey(date);
+    if (localDeducted.includes(key)) {
+      setLocalDeducted((prev) => prev.filter((k) => k !== key));
+      return;
+    }
+    if (localAdded.includes(key)) {
+      setLocalAdded((prev) => prev.filter((k) => k !== key));
+      return;
+    }
+    if (isBaseWorkingDay(date)) {
+      setLocalDeducted((prev) => [...prev, key]);
+    } else if (isBaseYellowDay(date)) {
+      setLocalAdded((prev) => [...prev, key]);
+    }
+  }
+
+  function handleUpdateRange() {
+    if (!savedRangeId) return;
+    updateSavedRange(savedRangeId, { deducted: localDeducted, added: localAdded });
+    setSavedRanges(loadSavedRanges());
+    const title = savedRangeTitle || "saved range";
+    toast.success(`Changes updated in '${title}'`, { style: { fontFamily: "'DM Mono', monospace" } });
+  }
+
+  const isReviewMode = !!(lockedRange && savedRangeId);
+  const displayWorkingDays = isReviewMode ? adjustedWorkingDays : effectiveDays;
 
   return (
     <div
@@ -482,7 +556,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
               />
               {formatLong(effectiveStart)} → {formatLong(effectiveEnd)}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
-              <span style={{ color: "rgba(232,213,183,0.55)" }}>{effectiveDays} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}</span>
+              <span style={{ color: "rgba(232,213,183,0.55)" }}>{displayWorkingDays} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}</span>
               <button
                 type="button"
                 onClick={() => {
@@ -539,6 +613,9 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
                   if (lockedRange) {
                     onLockRange(null);
                     setSavedRangeTitle(null);
+                    setSavedRangeId(null);
+                    setLocalDeducted([]);
+                    setLocalAdded([]);
                   } else {
                     onLockRange({ start: effectiveStart, end: effectiveEnd });
                   }
@@ -587,16 +664,44 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       {savedRangeTitle && (
         <div
           style={{
-            textAlign: "center",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "12px",
             marginTop: "8px",
             marginBottom: "12px",
-            fontFamily: "'Playfair Display', serif",
+            fontFamily: "'DM Mono', monospace",
             fontSize: "18px",
             color: "rgba(245,166,35,0.9)",
             letterSpacing: "0.04em",
           }}
         >
-          {savedRangeTitle}
+          <span style={{ textAlign: "center" }}>{savedRangeTitle}</span>
+          {savedRangeId && (
+            <button
+              type="button"
+              onClick={handleUpdateRange}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                handleUpdateRange();
+              }}
+              title="Update saved range with current changes"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: localDeducted.length || localAdded.length ? "rgba(245,166,35,0.2)" : "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(245,166,35,0.35)",
+                borderRadius: "10px",
+                padding: "8px 10px",
+                color: "rgba(245,166,35,0.95)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <RefreshCw size={18} />
+            </button>
+          )}
         </div>
       )}
 
@@ -619,8 +724,12 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
             hoverDate={hoverDate}
             excludeWeekends={excludeWeekends && !customWorkingDays}
             customWorkingDays={customWorkingDays}
+            deducted={localDeducted}
+            added={localAdded}
+            isReviewMode={isReviewMode}
             onDayClick={handleDayClick}
             onDayHover={handleDayHover}
+            onDayToggle={handleDayToggle}
           />
         ))}
       </div>

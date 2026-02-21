@@ -10,7 +10,15 @@ export function loadSavedRanges() {
 
 export function saveSavedRange(entry) {
   const list = loadSavedRanges();
-  list.push(entry);
+  list.push({ ...entry, deducted: entry.deducted || [], added: entry.added || [] });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+export function updateSavedRange(id, { deducted, added }) {
+  const list = loadSavedRanges();
+  const idx = list.findIndex((e) => e.id === id);
+  if (idx === -1) return;
+  list[idx] = { ...list[idx], deducted: deducted || [], added: added || [] };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 
