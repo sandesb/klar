@@ -14,11 +14,16 @@ export function saveSavedRange(entry) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 
-export function updateSavedRange(id, { deducted, added }) {
+export function updateSavedRange(id, updates) {
   const list = loadSavedRanges();
   const idx = list.findIndex((e) => e.id === id);
   if (idx === -1) return;
-  list[idx] = { ...list[idx], deducted: deducted || [], added: added || [] };
+  const next = { ...list[idx] };
+  if (updates.deducted != null) next.deducted = updates.deducted;
+  if (updates.added != null) next.added = updates.added;
+  if (updates.end != null) next.end = typeof updates.end === "string" ? updates.end : updates.end.toISOString();
+  if (updates.start != null) next.start = typeof updates.start === "string" ? updates.start : updates.start.toISOString();
+  list[idx] = next;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 

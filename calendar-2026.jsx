@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { CalendarRange, Lock, LockOpen, CalendarMinus, CalendarPlus, RefreshCw } from "lucide-react";
+import { CalendarRange,CalendarArrowDown,  Lock, LockOpen, CalendarMinus, CalendarPlus, RefreshCw } from "lucide-react";
+
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
 import SaveRangeDialog from "./components/SaveRangeDialog.jsx";
 import SavedRangesDialog from "./components/SavedRangesDialog.jsx";
@@ -316,6 +317,42 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     toast.success(`Changes updated in '${title}'`, { style: { fontFamily: "'DM Mono', monospace" } });
   }
 
+  /** Returns the next calendar day that counts as a working day (blue). Skips Saturdays; with plus days, uses first N days of week. */
+  function getNextWorkingDay(afterDate) {
+    const d = new Date(afterDate);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 1);
+    for (;;) {
+      const col = d.getDay();
+      if (customWorkingDays != null) {
+        if (col < customWorkingDays && col !== 6) return new Date(d);
+      } else if (excludeWeekends) {
+        if (col >= 1 && col <= 5) return new Date(d);
+      } else {
+        return new Date(d);
+      }
+      d.setDate(d.getDate() + 1);
+    }
+  }
+
+  function handleExtendRangeByOneWorkingDay() {
+    if (!savedRangeId || !effectiveStart || !effectiveEnd || !lockedRange) return;
+    const newEnd = getNextWorkingDay(effectiveEnd);
+    onLockRange({ start: effectiveStart, end: newEnd });
+    setRangeEnd(newEnd);
+    setEndInput(formatDate(newEnd));
+    updateSavedRange(savedRangeId, {
+      end: newEnd.toISOString(),
+      deducted: localDeducted,
+      added: localAdded,
+    });
+    setSavedRanges(loadSavedRanges());
+    const title = savedRangeTitle || "saved range";
+    toast.success(`Range extended to ${formatLong(newEnd)} · 1 working day added in '${title}'`, {
+      style: { fontFamily: "'DM Mono', monospace" },
+    });
+  }
+
   const isReviewMode = !!(lockedRange && savedRangeId);
   const displayWorkingDays = isReviewMode ? adjustedWorkingDays : effectiveDays;
 
@@ -400,7 +437,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
           gap: "14px",
         }}
       >
-        <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", fontFamily: "Playfair Display" }}>
           <DateInput
             label="Start"
             value={lockedRange ? formatDate(effectiveStart) : startInput}
@@ -413,6 +450,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
             style={{
               color: "rgba(245,166,35,0.35)",
               fontSize: "22px",
+              fontFamily: "Playfair Display",
               paddingBottom: "11px",
               flexShrink: 0,
             }}
@@ -676,6 +714,30 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
             letterSpacing: "0.04em",
           }}
         >
+            <button
+              type="button"
+              onClick={handleExtendRangeByOneWorkingDay}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                handleExtendRangeByOneWorkingDay();
+              }}
+              title="Extend range by 1 working day (saved automatically)"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(245,166,35,0.35)",
+                borderRadius: "10px",
+                padding: "8px 10px",
+                color: "rgba(245,166,35,0.95)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <CalendarArrowDown size={18} />
+            </button>
+        
           <span style={{ textAlign: "center" }}>{savedRangeTitle}</span>
           {savedRangeId && (
             <button
