@@ -1,5 +1,9 @@
-import { useState } from "react";
-import { CalendarRange, Lock, LockOpen } from "lucide-react";
+import { useState, useRef } from "react";
+import { CalendarRange, Lock, LockOpen, CalendarMinus, CalendarPlus } from "lucide-react";
+import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
+import SaveRangeDialog from "./components/SaveRangeDialog.jsx";
+import SavedRangesDialog from "./components/SavedRangesDialog.jsx";
+import { loadSavedRanges, saveSavedRange, deleteSavedRange } from "./savedRangesStorage.js";
 import {
   MonthCalendar,
   DateInput,
@@ -36,6 +40,118 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const [selecting, setSelecting] = useState(false);
   const [showDaysInput, setShowDaysInput] = useState(false);
   const [daysInput, setDaysInput] = useState("");
+  const [excludeWeekends, setExcludeWeekends] = useState(false);
+  const [customWorkingDays, setCustomWorkingDays] = useState(null);
+  const [showPlusDialog, setShowPlusDialog] = useState(false);
+  const [plusInput, setPlusInput] = useState("");
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [savedRanges, setSavedRanges] = useState(() => loadSavedRanges());
+  const [showSavedRangesDialog, setShowSavedRangesDialog] = useState(false);
+  const [savedRangeTitle, setSavedRangeTitle] = useState(null);
+  const lockLongPressTimer = useRef(null);
+  const lockLongPressFired = useRef(false);
+  const lockLongPressJustFired = useRef(false);
+  const daysLongPressTimer = useRef(null);
+  const daysLongPressFired = useRef(false);
+  const daysLongPressJustFired = useRef(false);
+
+  function countWeekdays(start, end) {
+    let count = 0;
+    const d = new Date(start);
+    d.setHours(0, 0, 0, 0);
+    const endTs = end.getTime();
+    while (d.getTime() <= endTs) {
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return count;
+  }
+
+  function countCustomWorkingDays(start, end, n) {
+    let count = 0;
+    const d = new Date(start);
+    d.setHours(0, 0, 0, 0);
+    const endTs = end.getTime();
+    while (d.getTime() <= endTs) {
+      const day = d.getDay();
+      if (day < n && day !== 6) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return count;
+  }
+
+  function applyPlusDays() {
+    const n = parseInt(plusInput, 10);
+    if (!Number.isInteger(n) || n < 1 || n > 7) return;
+    setCustomWorkingDays(n);
+    setExcludeWeekends(false);
+    setShowPlusDialog(false);
+    setPlusInput("");
+  }
+
+  function startLockLongPress() {
+    if (lockLongPressJustFired.current) return;
+    lockLongPressFired.current = false;
+    lockLongPressTimer.current = setTimeout(() => {
+      lockLongPressFired.current = true;
+      lockLongPressJustFired.current = true;
+      setShowSaveDialog(true);
+    }, 600);
+  }
+
+  function clearLockLongPress() {
+    if (lockLongPressTimer.current) {
+      clearTimeout(lockLongPressTimer.current);
+      lockLongPressTimer.current = null;
+    }
+  }
+
+  function startDaysLongPress() {
+    if (daysLongPressJustFired.current) return;
+    daysLongPressFired.current = false;
+    daysLongPressTimer.current = setTimeout(() => {
+      daysLongPressFired.current = true;
+      daysLongPressJustFired.current = true;
+      setShowSavedRangesDialog(true);
+    }, 600);
+  }
+
+  function clearDaysLongPress() {
+    if (daysLongPressTimer.current) {
+      clearTimeout(daysLongPressTimer.current);
+      daysLongPressTimer.current = null;
+    }
+  }
+
+  function handleSaveRangeProceed(title) {
+    if (!effectiveStart || !effectiveEnd) return;
+    const entry = {
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      title,
+      start: effectiveStart.toISOString(),
+      end: effectiveEnd.toISOString(),
+      plusDays: customWorkingDays != null ? customWorkingDays : null,
+    };
+    saveSavedRange(entry);
+    setSavedRanges(loadSavedRanges());
+  }
+
+  function handleLoadSavedRange(entry) {
+    const start = new Date(entry.start);
+    const end = new Date(entry.end);
+    setRangeStart(start);
+    setRangeEnd(end);
+    setStartInput(formatDate(start));
+    setEndInput(formatDate(end));
+    setSelecting(false);
+    setHoverDate(null);
+    setCustomWorkingDays(entry.plusDays >= 1 && entry.plusDays <= 7 ? entry.plusDays : null);
+    setExcludeWeekends(false);
+    onLockRange({ start, end });
+    setSavedRangeTitle(entry.title);
+    setShowSavedRangesDialog(false);
+  }
 
   function handleStartChange(v) {
     setStartInput(v);
@@ -120,9 +236,14 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       : null;
   const effectiveStart = effectiveRange?.start ?? null;
   const effectiveEnd = effectiveRange?.end ?? null;
-  const effectiveDays = effectiveRange
+  const totalDays = effectiveRange
     ? Math.round((effectiveEnd - effectiveStart) / (1000 * 60 * 60 * 24)) + 1
     : 0;
+  const effectiveDays = effectiveRange && customWorkingDays != null
+    ? countCustomWorkingDays(effectiveStart, effectiveEnd, customWorkingDays)
+    : effectiveRange && excludeWeekends
+      ? countWeekdays(effectiveStart, effectiveEnd)
+      : totalDays;
 
   return (
     <div
@@ -254,8 +375,21 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
           )}
           <button
             type="button"
-            onClick={() => setShowDaysInput((v) => !v)}
-            title="Set range by days"
+            onMouseDown={startDaysLongPress}
+            onMouseUp={clearDaysLongPress}
+            onMouseLeave={clearDaysLongPress}
+            onTouchStart={startDaysLongPress}
+            onTouchEnd={clearDaysLongPress}
+            onTouchCancel={clearDaysLongPress}
+            onClick={() => {
+              if (daysLongPressFired.current) {
+                daysLongPressFired.current = false;
+                daysLongPressJustFired.current = false;
+                return;
+              }
+              setShowDaysInput((v) => !v);
+            }}
+            title="Set range by days (long-press to view saved)"
             style={{
               background: showDaysInput ? "rgba(245,166,35,0.15)" : "transparent",
               border: "1px solid rgba(255,255,255,0.1)",
@@ -348,11 +482,68 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
               />
               {formatLong(effectiveStart)} → {formatLong(effectiveEnd)}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
-              <span style={{ color: "rgba(232,213,183,0.55)" }}>{effectiveDays} days</span>
+              <span style={{ color: "rgba(232,213,183,0.55)" }}>{effectiveDays} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}</span>
               <button
                 type="button"
-                onClick={() => (lockedRange ? onLockRange(null) : onLockRange({ start: effectiveStart, end: effectiveEnd }))}
-                title={lockedRange ? "Unlock range" : "Lock range to view in A.D / B.S"}
+                onClick={() => {
+                  setExcludeWeekends((v) => !v);
+                  if (!excludeWeekends) setCustomWorkingDays(null);
+                }}
+                title={excludeWeekends ? "Show all days" : "Exclude weekends (working days)"}
+                style={{
+                  marginLeft: "2px",
+                  background: "transparent",
+                  border: "none",
+                  padding: "4px",
+                  cursor: "pointer",
+                  color: excludeWeekends ? "#f5a623" : "rgba(232,213,183,0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <CalendarMinus size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPlusDialog(true)}
+                title={customWorkingDays ? `First ${customWorkingDays} days (Sun–${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][customWorkingDays-1]})` : "Set custom working days"}
+                style={{
+                  marginLeft: "2px",
+                  background: "transparent",
+                  border: "none",
+                  padding: "4px",
+                  cursor: "pointer",
+                  color: customWorkingDays ? "#6ba3e8" : "rgba(232,213,183,0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <CalendarPlus size={16} />
+              </button>
+              <button
+                type="button"
+                onMouseDown={startLockLongPress}
+                onMouseUp={clearLockLongPress}
+                onMouseLeave={clearLockLongPress}
+                onTouchStart={startLockLongPress}
+                onTouchEnd={clearLockLongPress}
+                onTouchCancel={clearLockLongPress}
+                onClick={() => {
+                  if (lockLongPressFired.current) {
+                    lockLongPressFired.current = false;
+                    lockLongPressJustFired.current = false;
+                    return;
+                  }
+                  if (lockedRange) {
+                    onLockRange(null);
+                    setSavedRangeTitle(null);
+                  } else {
+                    onLockRange({ start: effectiveStart, end: effectiveEnd });
+                  }
+                }}
+                title={lockedRange ? "Unlock range (long-press to save)" : "Lock range (long-press to save)"}
                 style={{
                   marginLeft: "4px",
                   background: "transparent",
@@ -393,6 +584,22 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
         </div>
       </div>
 
+      {savedRangeTitle && (
+        <div
+          style={{
+            textAlign: "center",
+            marginTop: "8px",
+            marginBottom: "12px",
+            fontFamily: "'Playfair Display', serif",
+            fontSize: "18px",
+            color: "rgba(245,166,35,0.9)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {savedRangeTitle}
+        </div>
+      )}
+
       <div
         className="calendar-grid"
         style={{
@@ -410,6 +617,8 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
             rangeStart={effectiveStart}
             rangeEnd={effectiveEnd}
             hoverDate={hoverDate}
+            excludeWeekends={excludeWeekends && !customWorkingDays}
+            customWorkingDays={customWorkingDays}
             onDayClick={handleDayClick}
             onDayHover={handleDayHover}
           />
@@ -461,6 +670,33 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
           </span>
         ))}
       </div>
+
+      <WorkingDaysDialog
+        open={showPlusDialog}
+        onClose={() => setShowPlusDialog(false)}
+        value={plusInput}
+        onChange={setPlusInput}
+        onProceed={applyPlusDays}
+        onReset={() => {
+          setCustomWorkingDays(null);
+          setPlusInput("");
+        }}
+      />
+      <SaveRangeDialog
+        open={showSaveDialog}
+        onClose={() => setShowSaveDialog(false)}
+        onProceed={handleSaveRangeProceed}
+      />
+      <SavedRangesDialog
+        open={showSavedRangesDialog}
+        onClose={() => setShowSavedRangesDialog(false)}
+        ranges={savedRanges}
+        onSelectRange={handleLoadSavedRange}
+        onDelete={(id) => {
+          deleteSavedRange(id);
+          setSavedRanges(loadSavedRanges());
+        }}
+      />
 
       <style>{`
         .calendar-grid { grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); }

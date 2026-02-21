@@ -1,6 +1,7 @@
 import "./main.css";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Toaster } from "react-hot-toast";
 import { Instagram, Youtube, Linkedin, Github } from "lucide-react";
 import Calendar2026 from "./calendar-2026.jsx";
 import Calendar2082 from "./calendar-2082.jsx";
@@ -71,6 +72,7 @@ function App() {
   const [lockedRange, setLockedRange] = useState(null); // { start: Date, end: Date } when locked
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(0deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)" }}>
+      <Toaster position="top-center" toastOptions={{ style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.25)" } }} />
       <CalendarToggle isBS={isBS} onSwitch={setIsBS} />
       {isBS ? (
         <Calendar2082 lockedRange={lockedRange} onLockRange={setLockedRange} />
@@ -94,7 +96,7 @@ function App() {
           textAlign: "justify",
           lineHeight: 1.6,
         }}>
-          <p style={{ margin: "0 2em 0.5em 2em" }}>· Little backstory as to how Klar'y, a calendar app came to be.</p>
+          <p style={{ margin: "0 2em 0.5em 2em" }}>· Little backstory as to how Klar'y, came to be a calendar app.</p>
           <p style={{ margin: "0 0 0.5em 0" }}>
             · I always love to visualize stuff. Numbers of days, weeks, months just pass by, and we call it a year. To track real progress, you have to be able to see how little time we have left here. Yet counting days feel like eternity. I felt this deep beneath my body whilst my time in Vipassana meditation, where each day felt like a year. 10 days = 10 years. But the hours I spent there, were very productive. So simple yet so difficult to just sit and let time pass on. What if we could make these days count and visually represent them? So here we are.
           </p>

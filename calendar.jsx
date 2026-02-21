@@ -42,8 +42,10 @@ export function parseMMDD(str, year = 2026) {
 
 /**
  * cells: array of null (empty cell) or { date: Date, dayNum: number }
+ * excludeWeekends: Mon–Fri working, Sat/Sun red
+ * customWorkingDays: first N days of week (0..N-1) are working (blue); rest + Sat always red
  */
-export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDate, onDayClick, onDayHover }) {
+export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDate, onDayClick, onDayHover, excludeWeekends, customWorkingDays }) {
   const today = new Date();
   const effectiveEnd = rangeEnd || hoverDate;
 
@@ -100,6 +102,9 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
           const isToday = date.toDateString() === today.toDateString();
           const isWeekend = date.getDay() === 0 || date.getDay() === 6;
           const col = date.getDay();
+          const isExcludedWeekend = excludeWeekends && inR && isWeekend;
+          const isCustomWorking = customWorkingDays != null && inR && col < customWorkingDays && col !== 6;
+          const isCustomExcluded = customWorkingDays != null && inR && col === 6;
 
           let borderRadius = "25px";
           if (inR && !isEdgeDay) {
@@ -120,17 +125,28 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
                 padding: "5px 0",
                 cursor: "pointer",
                 borderRadius,
-                background: isEdgeDay || isSolo
-                  ? "linear-gradient(135deg, #f5a623, #e8793a)"
-                  : inR ? "rgba(245,166,35,0.2)" : "transparent",
-                color: isEdgeDay || isSolo ? "#1a0e00"
-                  : inR ? "#f5c870"
-                  : isWeekend ? "rgba(232,213,183,0.4)" : "rgba(232,213,183,0.75)",
+                background: isCustomExcluded
+                  ? "rgba(200, 80, 80, 0.35)"
+                  : isCustomWorking
+                    ? "rgba(80, 140, 200, 0.4)"
+                    : isExcludedWeekend
+                      ? "rgba(200, 80, 80, 0.35)"
+                      : isEdgeDay || isSolo
+                        ? "linear-gradient(135deg, #f5a623, #e8793a)"
+                        : inR ? "rgba(245,166,35,0.2)" : "transparent",
+                color: isCustomExcluded
+                  ? "rgba(255,200,200,0.9)"
+                  : isCustomWorking
+                    ? "rgba(200, 220, 255, 0.95)"
+                    : isExcludedWeekend ? "rgba(255,200,200,0.9)"
+                    : isEdgeDay || isSolo ? "#1a0e00"
+                    : inR ? "#f5c870"
+                    : isWeekend ? "rgba(232,213,183,0.4)" : "rgba(232,213,183,0.75)",
                 fontSize: "11px",
                 fontFamily: "'DM Mono', monospace",
                 fontWeight: isEdgeDay || isSolo ? "700" : "400",
-                boxShadow: isEdgeDay || isSolo ? "0 0 10px rgba(245,166,35,0.45)" : (isToday && !inR && !isEdgeDay) ? "rgba(245, 166, 35, 0.45) 0px 0px 10px" : "none",
-                outline: isToday && !inR && !isEdgeDay ? "1px solid rgba(245,166,35,0.35)" : "none",
+                boxShadow: isCustomExcluded ? "0 0 8px rgba(200,80,80,0.5)" : isCustomWorking ? "0 0 8px rgba(80,140,200,0.5)" : isExcludedWeekend ? "0 0 8px rgba(200,80,80,0.5)" : isEdgeDay || isSolo ? "0 0 10px rgba(245,166,35,0.45)" : (isToday && !inR && !isEdgeDay) ? "rgba(245, 166, 35, 0.45) 0px 0px 10px" : "none",
+                outline: isCustomExcluded ? "1px solid rgba(200,80,80,0.6)" : isCustomWorking ? "1px solid rgba(80,140,200,0.6)" : isExcludedWeekend ? "1px solid rgba(200,80,80,0.6)" : (isToday && !inR && !isEdgeDay) ? "1px solid rgba(245,166,35,0.35)" : "none",
                 transition: "background 0.1s, color 0.1s",
                 userSelect: "none",
                 zIndex: isEdgeDay ? 1 : 0,
