@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { CalendarRange, CalendarMinus, CalendarPlus, Lock, LockOpen } from "lucide-react";
-import { MonthCalendar, DateInput, formatDate, formatLong } from "./calendar.jsx";
+import { MonthCalendar, DateInput, formatDate, formatLong, toDateKey } from "./calendar.jsx";
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
 import SaveRangeDialog from "./components/SaveRangeDialog.jsx";
 import SavedRangesDialog from "./components/SavedRangesDialog.jsx";
@@ -48,21 +48,32 @@ const BS_2083 = {
 const BS_YEARS = [BS_2082, BS_2083];
 const ONE_DAY_MS = 86400000;
 
-/** Return which BS year (2082 or 2083) the AD date falls in, or null. */
+/** Add n days to YYYY-MM-DD and return YYYY-MM-DD (using noon local to avoid timezone boundary issues). */
+function addDaysToDateKey(dateKey, n) {
+  const d = new Date(dateKey + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return toDateKey(d);
+}
+
+/** Return the last day of a BS month as YYYY-MM-DD. */
+function getMonthEndKey(starts_ad, days) {
+  return addDaysToDateKey(starts_ad, days - 1);
+}
+
+/** Return which BS year (2082 or 2083) the AD date falls in, or null. Uses date-key comparison so "April 14" local matches Baishakh 1 (2083). */
 function getBSYearForDate(date) {
   if (!date) return null;
-  const ad = date.getTime();
+  const key = toDateKey(date);
   for (const bs of BS_YEARS) {
     for (const m of bs.months) {
-      const startTs = new Date(m.starts_ad).getTime();
-      const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
-      if (ad >= startTs && ad <= endTs) return bs.year_bs;
+      const endKey = getMonthEndKey(m.starts_ad, m.days);
+      if (key >= m.starts_ad && key <= endKey) return bs.year_bs;
     }
   }
   return null;
 }
 
-/** Parse "MM/DD" as B.S. month (1–12) and day for the given BS year; return AD Date or null. */
+/** Parse "MM/DD" as B.S. month (1–12) and day for the given BS year; return AD Date or null. Uses local date so it aligns with calendar cells and range checks. */
 function parseBSMMDD(str, bsYearData = BS_2082) {
   if (!str) return null;
   const clean = str.replace(/[^\d]/g, "");
@@ -72,21 +83,27 @@ function parseBSMMDD(str, bsYearData = BS_2082) {
   if (monthNum < 1 || monthNum > 12) return null;
   const month = bsYearData.months[monthNum - 1];
   if (dayNum < 1 || dayNum > month.days) return null;
-  const startTs = new Date(month.starts_ad).getTime();
-  return new Date(startTs + (dayNum - 1) * ONE_DAY_MS);
+  const [y, mo, d] = month.starts_ad.split("-").map(Number);
+  return new Date(y, mo - 1, d + (dayNum - 1));
 }
 
-/** Given an AD Date, return B.S. "MM/DD". Checks 2082 then 2083. */
+/** Day number (1-based) within the BS month for this date key; uses date-key comparison. */
+function getBSDayFromKey(key, starts_ad) {
+  const d1 = new Date(key + "T12:00:00");
+  const d2 = new Date(starts_ad + "T12:00:00");
+  return Math.round((d1.getTime() - d2.getTime()) / ONE_DAY_MS) + 1;
+}
+
+/** Given an AD Date, return B.S. "MM/DD". Checks 2082 then 2083. Uses date-key comparison so timezone does not misplace April 14. */
 function formatDateBS(date) {
   if (!date) return "";
-  const ad = date.getTime();
+  const key = toDateKey(date);
   for (const bs of BS_YEARS) {
     for (let i = 0; i < bs.months.length; i++) {
       const m = bs.months[i];
-      const startTs = new Date(m.starts_ad).getTime();
-      const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
-      if (ad >= startTs && ad <= endTs) {
-        const day = Math.floor((ad - startTs) / ONE_DAY_MS) + 1;
+      const endKey = getMonthEndKey(m.starts_ad, m.days);
+      if (key >= m.starts_ad && key <= endKey) {
+        const day = getBSDayFromKey(key, m.starts_ad);
         return `${(i + 1).toString().padStart(2, "0")}/${day.toString().padStart(2, "0")}`;
       }
     }
@@ -94,17 +111,16 @@ function formatDateBS(date) {
   return "";
 }
 
-/** Given an AD Date, return B.S. long label e.g. "Baishakh 1". Checks 2082 then 2083; else UI falls back to A.D. */
+/** Given an AD Date, return B.S. long label e.g. "Baishakh 1". Checks 2082 then 2083; else UI falls back to A.D. Uses date-key comparison. */
 function formatLongBS(date) {
   if (!date) return "";
-  const ad = date.getTime();
+  const key = toDateKey(date);
   for (const bs of BS_YEARS) {
     for (let i = 0; i < bs.months.length; i++) {
       const m = bs.months[i];
-      const startTs = new Date(m.starts_ad).getTime();
-      const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
-      if (ad >= startTs && ad <= endTs) {
-        const day = Math.floor((ad - startTs) / ONE_DAY_MS) + 1;
+      const endKey = getMonthEndKey(m.starts_ad, m.days);
+      if (key >= m.starts_ad && key <= endKey) {
+        const day = getBSDayFromKey(key, m.starts_ad);
         return `${m.name_en} ${day}`;
       }
     }
@@ -112,17 +128,17 @@ function formatLongBS(date) {
   return "";
 }
 
+/** Build calendar cells for a BS month. Uses local calendar dates so range highlighting matches "April 14 = Baishakh 1" in the user's timezone. */
 function buildBSCells(month) {
-  const startDate = new Date(month.starts_ad);
-  const startTs = startDate.getTime();
-  const firstDay = startDate.getDay();
+  const [y, mo, d] = month.starts_ad.split("-").map(Number);
+  const firstDay = new Date(y, mo - 1, d).getDay();
   const days = month.days;
   const cells = [];
   for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= days; d++) {
+  for (let dayNum = 1; dayNum <= days; dayNum++) {
     cells.push({
-      date: new Date(startTs + (d - 1) * ONE_DAY_MS),
-      dayNum: d,
+      date: new Date(y, mo - 1, d + (dayNum - 1)),
+      dayNum,
     });
   }
   return cells;
@@ -350,6 +366,26 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
     2082;
   const displayBSData = displayYear === 2083 ? BS_2083 : BS_2082;
 
+  const startBSYear = effectiveStart ? getBSYearForDate(effectiveStart) : null;
+  const endBSYear = effectiveEnd ? getBSYearForDate(effectiveEnd) : null;
+  const spanTwoYears = !!(
+    effectiveStart &&
+    effectiveEnd &&
+    startBSYear != null &&
+    endBSYear != null &&
+    startBSYear !== endBSYear
+  );
+
+  const calendarItems = spanTwoYears
+    ? [
+        ...BS_2082.months.map((m) => ({ ...m, year: 2082 })),
+        { isYearDivider: true, year: 2083 },
+        ...BS_2083.months.map((m) => ({ ...m, year: 2083 })),
+      ]
+    : displayBSData.months.map((m) => ({ ...m, year: displayYear }));
+
+  const yearTitle = spanTwoYears ? "2082 – 2083" : String(displayYear);
+
   return (
     <div
       className="calendar-page"
@@ -402,7 +438,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
             textShadow: "0 -80px 120px rgba(187, 187, 187, 0.37)",
           }}
         >
-          {displayYear}
+          {yearTitle}
         </h1>
         <div
           style={{
@@ -709,20 +745,39 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
           gap: "12px",
         }}
       >
-        {displayBSData.months.map((month, i) => (
-          <MonthCalendar
-            key={month.index}
-            monthLabel={month.name_en}
-            cells={buildBSCells(month)}
-            rangeStart={effectiveStart}
-            rangeEnd={effectiveEnd}
-            hoverDate={hoverDate}
-            excludeWeekends={excludeWeekends && !customWorkingDays}
-            customWorkingDays={customWorkingDays}
-            onDayClick={handleDayClick}
-            onDayHover={handleDayHover}
-          />
-        ))}
+        {calendarItems.map((item, i) =>
+          item.isYearDivider ? (
+            <div
+              key={`divider-${item.year}`}
+              style={{
+                gridColumn: "1 / -1",
+                textAlign: "center",
+                padding: "12px 0 4px",
+                fontFamily: "'Playfair Display', serif",
+                fontSize: "clamp(28px, 4vw, 42px)",
+                color: "rgba(245,166,35,0.85)",
+                letterSpacing: "0.02em",
+                borderTop: "1px solid rgba(245,166,35,0.2)",
+                marginTop: "8px",
+              }}
+            >
+              {item.year}
+            </div>
+          ) : (
+            <MonthCalendar
+              key={`${item.year}-${item.index}`}
+              monthLabel={item.year === 2083 && spanTwoYears ? `${item.name_en} (2083)` : item.name_en}
+              cells={buildBSCells(item)}
+              rangeStart={effectiveStart}
+              rangeEnd={effectiveEnd}
+              hoverDate={hoverDate}
+              excludeWeekends={excludeWeekends && !customWorkingDays}
+              customWorkingDays={customWorkingDays}
+              onDayClick={handleDayClick}
+              onDayHover={handleDayHover}
+            />
+          )
+        )}
       </div>
 
       <div
