@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { CalendarRange, CalendarMinus, CalendarPlus, Lock, LockOpen } from "lucide-react";
-import { MonthCalendar, DateInput } from "./calendar.jsx";
+import { MonthCalendar, DateInput, formatDate, formatLong } from "./calendar.jsx";
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
 import SaveRangeDialog from "./components/SaveRangeDialog.jsx";
 import SavedRangesDialog from "./components/SavedRangesDialog.jsx";
@@ -25,49 +25,88 @@ const BS_2082 = {
   ],
 };
 
+/** BS 2083: AD 2026-04-14 through 2027-04-13 (approx). Enables June 1–Aug 31 2026 → Shrawan etc. */
+const BS_2083 = {
+  year_bs: 2083,
+  country: "Nepal",
+  months: [
+    { index: 1, name_en: "Baishakh / वैशाख", name_ne: "वैशाख", days: 31, starts_ad: "2026-04-14" },
+    { index: 2, name_en: "Jestha / जेठ", name_ne: "जेठ", days: 31, starts_ad: "2026-05-15" },
+    { index: 3, name_en: "Ashadh / असार", name_ne: "असार", days: 32, starts_ad: "2026-06-15" },
+    { index: 4, name_en: "Shrawan / साउन", name_ne: "साउन", days: 32, starts_ad: "2026-07-17" },
+    { index: 5, name_en: "Bhadra / भदौ", name_ne: "भदौ", days: 31, starts_ad: "2026-08-18" },
+    { index: 6, name_en: "Ashwin / असोज", name_ne: "असोज", days: 30, starts_ad: "2026-09-18" },
+    { index: 7, name_en: "Kartik / कात्तिक", name_ne: "कात्तिक", days: 30, starts_ad: "2026-10-18" },
+    { index: 8, name_en: "Mangsir / मंसिर", name_ne: "मंसिर", days: 29, starts_ad: "2026-11-17" },
+    { index: 9, name_en: "Poush / पुष", name_ne: "पुष", days: 29, starts_ad: "2026-12-16" },
+    { index: 10, name_en: "Magh / माघ", name_ne: "माघ", days: 30, starts_ad: "2027-01-14" },
+    { index: 11, name_en: "Falgun / फागुन", name_ne: "फागुन", days: 30, starts_ad: "2027-02-12" },
+    { index: 12, name_en: "Chaitra / चैत", name_ne: "चैत", days: 30, starts_ad: "2027-03-15" },
+  ],
+};
+
+const BS_YEARS = [BS_2082, BS_2083];
 const ONE_DAY_MS = 86400000;
 
-/** Parse "MM/DD" as B.S. month (1–12) and day; return AD Date or null. */
-function parseBSMMDD(str) {
+/** Return which BS year (2082 or 2083) the AD date falls in, or null. */
+function getBSYearForDate(date) {
+  if (!date) return null;
+  const ad = date.getTime();
+  for (const bs of BS_YEARS) {
+    for (const m of bs.months) {
+      const startTs = new Date(m.starts_ad).getTime();
+      const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
+      if (ad >= startTs && ad <= endTs) return bs.year_bs;
+    }
+  }
+  return null;
+}
+
+/** Parse "MM/DD" as B.S. month (1–12) and day for the given BS year; return AD Date or null. */
+function parseBSMMDD(str, bsYearData = BS_2082) {
   if (!str) return null;
   const clean = str.replace(/[^\d]/g, "");
   if (clean.length !== 4) return null;
   const monthNum = parseInt(clean.slice(0, 2), 10);
   const dayNum = parseInt(clean.slice(2, 4), 10);
   if (monthNum < 1 || monthNum > 12) return null;
-  const month = BS_2082.months[monthNum - 1];
+  const month = bsYearData.months[monthNum - 1];
   if (dayNum < 1 || dayNum > month.days) return null;
   const startTs = new Date(month.starts_ad).getTime();
   return new Date(startTs + (dayNum - 1) * ONE_DAY_MS);
 }
 
-/** Given an AD Date, return B.S. "MM/DD" (month 01–12, day). */
+/** Given an AD Date, return B.S. "MM/DD". Checks 2082 then 2083. */
 function formatDateBS(date) {
   if (!date) return "";
   const ad = date.getTime();
-  for (let i = 0; i < BS_2082.months.length; i++) {
-    const m = BS_2082.months[i];
-    const startTs = new Date(m.starts_ad).getTime();
-    const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
-    if (ad >= startTs && ad <= endTs) {
-      const day = Math.floor((ad - startTs) / ONE_DAY_MS) + 1;
-      return `${(i + 1).toString().padStart(2, "0")}/${day.toString().padStart(2, "0")}`;
+  for (const bs of BS_YEARS) {
+    for (let i = 0; i < bs.months.length; i++) {
+      const m = bs.months[i];
+      const startTs = new Date(m.starts_ad).getTime();
+      const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
+      if (ad >= startTs && ad <= endTs) {
+        const day = Math.floor((ad - startTs) / ONE_DAY_MS) + 1;
+        return `${(i + 1).toString().padStart(2, "0")}/${day.toString().padStart(2, "0")}`;
+      }
     }
   }
   return "";
 }
 
-/** Given an AD Date, return B.S. long label e.g. "Baishakh 1". */
+/** Given an AD Date, return B.S. long label e.g. "Baishakh 1". Checks 2082 then 2083; else UI falls back to A.D. */
 function formatLongBS(date) {
   if (!date) return "";
   const ad = date.getTime();
-  for (let i = 0; i < BS_2082.months.length; i++) {
-    const m = BS_2082.months[i];
-    const startTs = new Date(m.starts_ad).getTime();
-    const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
-    if (ad >= startTs && ad <= endTs) {
-      const day = Math.floor((ad - startTs) / ONE_DAY_MS) + 1;
-      return `${m.name_en} ${day}`;
+  for (const bs of BS_YEARS) {
+    for (let i = 0; i < bs.months.length; i++) {
+      const m = bs.months[i];
+      const startTs = new Date(m.starts_ad).getTime();
+      const endTs = startTs + (m.days - 1) * ONE_DAY_MS;
+      if (ad >= startTs && ad <= endTs) {
+        const day = Math.floor((ad - startTs) / ONE_DAY_MS) + 1;
+        return `${m.name_en} ${day}`;
+      }
     }
   }
   return "";
@@ -211,9 +250,9 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
     setShowSavedRangesDialog(false);
   }
 
-  function handleStartChange(v) {
+  function handleStartChange(v, bsYearData = BS_2082) {
     setStartInput(v);
-    const d = parseBSMMDD(v);
+    const d = parseBSMMDD(v, bsYearData);
     if (d) {
       setRangeStart(d);
       setSelecting(true);
@@ -225,9 +264,9 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
     }
   }
 
-  function handleEndChange(v) {
+  function handleEndChange(v, bsYearData = BS_2082) {
     setEndInput(v);
-    const d = parseBSMMDD(v);
+    const d = parseBSMMDD(v, bsYearData);
     if (d) setRangeEnd(d);
     else if (!v) setRangeEnd(null);
     if (d) setSelecting(false);
@@ -303,6 +342,14 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
       ? countWeekdays(effectiveStart, effectiveEnd)
       : totalDays;
 
+  const displayYear =
+    getBSYearForDate(effectiveStart) ??
+    getBSYearForDate(effectiveEnd) ??
+    getBSYearForDate(rangeStart) ??
+    getBSYearForDate(rangeEnd) ??
+    2082;
+  const displayBSData = displayYear === 2083 ? BS_2083 : BS_2082;
+
   return (
     <div
       className="calendar-page"
@@ -355,7 +402,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
             textShadow: "0 -80px 120px rgba(187, 187, 187, 0.37)",
           }}
         >
-          {BS_2082.year_bs}
+          {displayYear}
         </h1>
         <div
           style={{
@@ -382,8 +429,8 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
         <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
           <DateInput
             label="Start"
-            value={lockedRange ? formatDateBS(effectiveStart) : startInput}
-            onChange={handleStartChange}
+            value={lockedRange ? (formatDateBS(effectiveStart) || formatDate(effectiveStart)) : startInput}
+            onChange={(v) => handleStartChange(v, displayBSData)}
             placeholder="MM/DD"
             active={!lockedRange && !rangeStart}
             disabled={!!lockedRange}
@@ -400,8 +447,8 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
           </div>
           <DateInput
             label="End"
-            value={lockedRange ? formatDateBS(effectiveEnd) : endInput}
-            onChange={handleEndChange}
+            value={lockedRange ? (formatDateBS(effectiveEnd) || formatDate(effectiveEnd)) : endInput}
+            onChange={(v) => handleEndChange(v, displayBSData)}
             placeholder="MM/DD"
             active={!lockedRange && selecting && !!rangeStart && !rangeEnd}
             disabled={!!lockedRange}
@@ -533,7 +580,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
                   display: "inline-block",
                 }}
               />
-              {formatLongBS(effectiveStart)} → {formatLongBS(effectiveEnd)}
+              {formatLongBS(effectiveStart) || `${formatLong(effectiveStart)} (A.D)`} → {formatLongBS(effectiveEnd) || `${formatLong(effectiveEnd)} (A.D)`}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
               <span style={{ color: "rgba(232,213,183,0.55)" }}>{effectiveDays} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}</span>
               <button
@@ -662,7 +709,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
           gap: "12px",
         }}
       >
-        {BS_2082.months.map((month, i) => (
+        {displayBSData.months.map((month, i) => (
           <MonthCalendar
             key={month.index}
             monthLabel={month.name_en}

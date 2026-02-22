@@ -226,7 +226,7 @@ export function DateInput({ label, value, onChange, placeholder, active, disable
           borderRadius: "10px",
           padding: "12px 0",
           color: "#e8d5b7",
-          fontFamily: "'Playfair Display', serif",
+          fontFamily: value ? "'Playfair Display', serif" : "'DM Mono', monospace",
           fontSize: "20px",
           letterSpacing: "0.08em",
           outline: "none",
