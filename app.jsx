@@ -96,9 +96,9 @@ function App() {
           textAlign: "justify",
           lineHeight: 1.6,
         }}>
-          <p style={{ margin: "0 2em 0.5em 2em" }}>· Little backstory as to how Klar'y, came to be a calendar app.</p>
+          <p style={{ margin: "0 2em 0.5em 2em" }}>· Little backstory as of Klar'y,</p>
           <p style={{ margin: "0 0 0.5em 0" }}>
-            · I always love to visualize stuff. Numbers of days, weeks, months just pass by, and we call it a year. To track real progress, you have to be able to see how little time we have left here. Yet counting days feel like eternity. I felt this deep beneath my body whilst my time in Vipassana meditation, where each day felt like a year. 10 days = 10 years. But the hours I spent there, were very productive. So simple yet so difficult to just sit and let time pass on. What if we could make these days count and visually represent them? So here we are.
+            · I love to visualize stuff. Numbers of days, weeks, months just pass by, and we call it a year. To track real progress, you have to be able to see how little time we have left here. Yet counting days feel like eternity. I felt this deep beneath my body whilst my time in Vipassana meditation, where each day felt like a year. 10 days = 10 years. But the hours I spent there, were very productive. So simple yet so difficult to just sit and let time pass on. What if we could make these days count and visually represent them? So here we are.
           </p>
           <p style={{ margin: 0 }}>
           · 'KLAR' means 'Clear' in German. I found clarity in my Vipassana experience. Hope Klary will help you in your journey too. Peace.
