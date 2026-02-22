@@ -72,7 +72,7 @@ function App() {
   const [lockedRange, setLockedRange] = useState(null); // { start: Date, end: Date } when locked
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(0deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)" }}>
-      <Toaster position="top-center" toastOptions={{ style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.25)" } }} />
+      <Toaster position="bottom-center" toastOptions={{ style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.25)" } }} />
       <CalendarToggle isBS={isBS} onSwitch={setIsBS} />
       {isBS ? (
         <Calendar2082 lockedRange={lockedRange} onLockRange={setLockedRange} />
