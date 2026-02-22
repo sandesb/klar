@@ -94,6 +94,8 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     setExcludeWeekends(false);
     setShowPlusDialog(false);
     setPlusInput("");
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    toast.success(`Working days applied: first ${n} days (Sun–${dayNames[n - 1]})`, { style: { fontFamily: "'DM Mono', monospace" } });
   }
 
   function startLockLongPress() {
@@ -170,6 +172,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       setSelecting(true);
       setRangeEnd(null);
       setEndInput("");
+      toast.success(`Start: ${formatLong(d)}`, { style: { fontFamily: "'DM Mono', monospace" } });
     } else if (!v) {
       setRangeStart(null);
       setSelecting(false);
@@ -179,8 +182,10 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   function handleEndChange(v) {
     setEndInput(v);
     const d = parseMMDD(v, YEAR);
-    if (d) setRangeEnd(d);
-    else if (!v) setRangeEnd(null);
+    if (d) {
+      setRangeEnd(d);
+      toast.success(`End: ${formatLong(d)}`, { style: { fontFamily: "'DM Mono', monospace" } });
+    } else if (!v) setRangeEnd(null);
     if (d) setSelecting(false);
   }
 
@@ -191,10 +196,12 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       setStartInput(formatDate(date));
       setEndInput("");
       setSelecting(true);
+      toast.success(`Start: ${formatLong(date)}`, { style: { fontFamily: "'DM Mono', monospace" } });
     } else {
       setRangeEnd(date);
       setEndInput(formatDate(date));
       setSelecting(false);
+      toast.success(`End: ${formatLong(date)}`, { style: { fontFamily: "'DM Mono', monospace" } });
     }
   }
 
@@ -230,6 +237,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     setSelecting(false);
     setShowDaysInput(false);
     setDaysInput("");
+    toast.success(`${formatLong(today)} → ${formatLong(endDate)} (${n} days)`, { style: { fontFamily: "'DM Mono', monospace" } });
   }
 
   const hasRange = rangeStart && rangeEnd;
@@ -598,8 +606,10 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
               <button
                 type="button"
                 onClick={() => {
-                  setExcludeWeekends((v) => !v);
-                  if (!excludeWeekends) setCustomWorkingDays(null);
+                  const next = !excludeWeekends;
+                  setExcludeWeekends(next);
+                  if (next) setCustomWorkingDays(null);
+                  toast.success(next ? "Exclude weekends applied" : "Exclude weekends removed", { style: { fontFamily: "'DM Mono', monospace" } });
                 }}
                 title={excludeWeekends ? "Show all days" : "Exclude weekends (working days)"}
                 style={{
@@ -654,8 +664,10 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
                     setSavedRangeId(null);
                     setLocalDeducted([]);
                     setLocalAdded([]);
+                    toast.success("Range unlocked", { style: { fontFamily: "'DM Mono', monospace" } });
                   } else {
                     onLockRange({ start: effectiveStart, end: effectiveEnd });
+                    toast.success("Range locked", { style: { fontFamily: "'DM Mono', monospace" } });
                   }
                 }}
                 title={lockedRange ? "Unlock range (long-press to save)" : "Lock range (long-press to save)"}
@@ -851,6 +863,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
         onReset={() => {
           setCustomWorkingDays(null);
           setPlusInput("");
+          toast.success("Custom working days removed", { style: { fontFamily: "'DM Mono', monospace" } });
         }}
       />
       <SaveRangeDialog

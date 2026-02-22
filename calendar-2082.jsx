@@ -1,6 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { CalendarRange, CalendarMinus, CalendarPlus, Lock, LockOpen } from "lucide-react";
 import { MonthCalendar, DateInput, formatDate, formatLong, toDateKey } from "./calendar.jsx";
+import toast from "react-hot-toast";
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
 import SaveRangeDialog from "./components/SaveRangeDialog.jsx";
 import SavedRangesDialog from "./components/SavedRangesDialog.jsx";
@@ -167,6 +168,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
   const daysLongPressTimer = useRef(null);
   const daysLongPressFired = useRef(false);
   const daysLongPressJustFired = useRef(false);
+  const startMonthRef = useRef(null);
 
   function countWeekdays(start, end) {
     let count = 0;
@@ -274,6 +276,8 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
       setSelecting(true);
       setRangeEnd(null);
       setEndInput("");
+      const label = formatLongBS(d) || formatLong(d);
+      toast.success(`Start: ${label}`, { style: { fontFamily: "'DM Mono', monospace" } });
     } else if (!v) {
       setRangeStart(null);
       setSelecting(false);
@@ -283,8 +287,11 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
   function handleEndChange(v, bsYearData = BS_2082) {
     setEndInput(v);
     const d = parseBSMMDD(v, bsYearData);
-    if (d) setRangeEnd(d);
-    else if (!v) setRangeEnd(null);
+    if (d) {
+      setRangeEnd(d);
+      const label = formatLongBS(d) || formatLong(d);
+      toast.success(`End: ${label}`, { style: { fontFamily: "'DM Mono', monospace" } });
+    } else if (!v) setRangeEnd(null);
     if (d) setSelecting(false);
   }
 
@@ -295,10 +302,14 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
       setStartInput(formatDateBS(date));
       setEndInput("");
       setSelecting(true);
+      const label = formatLongBS(date) || formatLong(date);
+      toast.success(`Start: ${label}`, { style: { fontFamily: "'DM Mono', monospace" } });
     } else {
       setRangeEnd(date);
       setEndInput(formatDateBS(date));
       setSelecting(false);
+      const label = formatLongBS(date) || formatLong(date);
+      toast.success(`End: ${label}`, { style: { fontFamily: "'DM Mono', monospace" } });
     }
   }
 
@@ -330,6 +341,9 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
     setSelecting(false);
     setShowDaysInput(false);
     setDaysInput("");
+    const startLabel = formatLongBS(today) || formatLong(today);
+    const endLabel = formatLongBS(endDate) || formatLong(endDate);
+    toast.success(`${startLabel} → ${endLabel} (${n} days)`, { style: { fontFamily: "'DM Mono', monospace" } });
   }
 
   const hasRange = rangeStart && rangeEnd;
@@ -385,6 +399,15 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
     : displayBSData.months.map((m) => ({ ...m, year: displayYear }));
 
   const yearTitle = spanTwoYears ? "2082 – 2083" : String(displayYear);
+
+  useEffect(() => {
+    if (!effectiveStart) return;
+    const el = startMonthRef.current;
+    if (el) {
+      const t = setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+      return () => clearTimeout(t);
+    }
+  }, [effectiveStart]);
 
   return (
     <div
@@ -745,39 +768,46 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
           gap: "12px",
         }}
       >
-        {calendarItems.map((item, i) =>
-          item.isYearDivider ? (
-            <div
-              key={`divider-${item.year}`}
-              style={{
-                gridColumn: "1 / -1",
-                textAlign: "center",
-                padding: "12px 0 4px",
-                fontFamily: "'Playfair Display', serif",
-                fontSize: "clamp(28px, 4vw, 42px)",
-                color: "rgba(245,166,35,0.85)",
-                letterSpacing: "0.02em",
-                borderTop: "1px solid rgba(245,166,35,0.2)",
-                marginTop: "8px",
-              }}
-            >
-              {item.year}
+        {calendarItems.map((item, i) => {
+          if (item.isYearDivider) {
+            return (
+              <div
+                key={`divider-${item.year}`}
+                style={{
+                  gridColumn: "1 / -1",
+                  textAlign: "center",
+                  padding: "12px 0 4px",
+                  fontFamily: "'Playfair Display', serif",
+                  fontSize: "clamp(28px, 4vw, 42px)",
+                  color: "rgba(245,166,35,0.85)",
+                  letterSpacing: "0.02em",
+                  borderTop: "1px solid rgba(245,166,35,0.2)",
+                  marginTop: "8px",
+                }}
+              >
+                {item.year}
+              </div>
+            );
+          }
+          const key = effectiveStart ? toDateKey(effectiveStart) : "";
+          const endKey = key ? getMonthEndKey(item.starts_ad, item.days) : "";
+          const isStartMonth = key && key >= item.starts_ad && key <= endKey;
+          return (
+            <div key={`${item.year}-${item.index}`} ref={isStartMonth ? startMonthRef : undefined}>
+              <MonthCalendar
+                monthLabel={item.year === 2083 && spanTwoYears ? `${item.name_en} (2083)` : item.name_en}
+                cells={buildBSCells(item)}
+                rangeStart={effectiveStart}
+                rangeEnd={effectiveEnd}
+                hoverDate={hoverDate}
+                excludeWeekends={excludeWeekends && !customWorkingDays}
+                customWorkingDays={customWorkingDays}
+                onDayClick={handleDayClick}
+                onDayHover={handleDayHover}
+              />
             </div>
-          ) : (
-            <MonthCalendar
-              key={`${item.year}-${item.index}`}
-              monthLabel={item.year === 2083 && spanTwoYears ? `${item.name_en} (2083)` : item.name_en}
-              cells={buildBSCells(item)}
-              rangeStart={effectiveStart}
-              rangeEnd={effectiveEnd}
-              hoverDate={hoverDate}
-              excludeWeekends={excludeWeekends && !customWorkingDays}
-              customWorkingDays={customWorkingDays}
-              onDayClick={handleDayClick}
-              onDayHover={handleDayHover}
-            />
-          )
-        )}
+          );
+        })}
       </div>
 
       <div
