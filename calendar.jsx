@@ -1,3 +1,5 @@
+import { useRef } from "react";
+
 export const DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 export const MONTHS_AD = [
@@ -52,10 +54,15 @@ export function parseMMDD(str, year = 2026) {
  * customWorkingDays: first N days of week (0..N-1) are working (blue); rest + Sat always red
  * deducted/added: date keys (YYYY-MM-DD) for review-mode overrides (red/blue)
  * isReviewMode: dates in range are clickable to toggle blue/yellow/red (Saturdays locked yellow)
+ * onDayLongPress: (date) => {} when user long-presses a day in review mode (saved range)
  */
-export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDate, onDayClick, onDayHover, excludeWeekends, customWorkingDays, deducted = [], added = [], isReviewMode = false, onDayToggle = () => {} }) {
+const LONG_PRESS_MS = 500;
+
+export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDate, onDayClick, onDayHover, excludeWeekends, customWorkingDays, deducted = [], added = [], isReviewMode = false, onDayToggle = () => {}, onDayLongPress }) {
   const today = new Date();
   const effectiveEnd = rangeEnd || hoverDate;
+  const longPressTimerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
 
   function inRange(date) {
     if (!rangeStart || !effectiveEnd) return false;
@@ -143,8 +150,34 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
             else borderRadius = "0";
           }
 
+          function clearLongPress() {
+            if (longPressTimerRef.current) {
+              clearTimeout(longPressTimerRef.current);
+              longPressTimerRef.current = null;
+              console.log("[Todo long-press] timer cleared (mouse up/leave or touch end)");
+            }
+          }
+
+          function startLongPress() {
+            if (!isReviewMode || !inR || !onDayLongPress) {
+              if (isReviewMode && inR) console.log("[Todo long-press] start skipped: onDayLongPress?", !!onDayLongPress);
+              return;
+            }
+            console.log("[Todo long-press] timer started", date.toDateString());
+            longPressTimerRef.current = setTimeout(() => {
+              longPressTimerRef.current = null;
+              longPressFiredRef.current = true;
+              console.log("[Todo long-press] FIRED → opening todo dialog for", date.toDateString());
+              onDayLongPress(date);
+            }, LONG_PRESS_MS);
+          }
+
           function handleDayInteraction(e) {
             if (e.type === "touchend") e.preventDefault();
+            if (isReviewMode && longPressFiredRef.current) {
+              longPressFiredRef.current = false;
+              return;
+            }
             if (isReviewMode) {
               if (inR && !isSaturday) onDayToggle(date);
             } else {
@@ -156,9 +189,13 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
             <div
               key={`${i}-${dayNum}`}
               onClick={handleDayInteraction}
-              onTouchEnd={handleDayInteraction}
+              onMouseDown={startLongPress}
+              onMouseUp={clearLongPress}
+              onMouseLeave={() => { clearLongPress(); onDayHover(null); }}
+              onTouchStart={startLongPress}
+              onTouchEnd={(e) => { clearLongPress(); handleDayInteraction(e); }}
+              onTouchCancel={clearLongPress}
               onMouseEnter={() => onDayHover(date)}
-              onMouseLeave={() => onDayHover(null)}
               style={{
                 position: "relative",
                 textAlign: "center",

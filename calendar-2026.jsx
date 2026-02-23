@@ -4,6 +4,7 @@ import { CalendarRange,CalendarArrowDown,  Lock, LockOpen, CalendarMinus, Calend
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
 import SaveRangeDialog from "./components/SaveRangeDialog.jsx";
 import SavedRangesDialog from "./components/SavedRangesDialog.jsx";
+import TodoDialog from "./components/TodoDialog.jsx";
 import toast from "react-hot-toast";
 import { loadSavedRanges, saveSavedRange, deleteSavedRange, updateSavedRange } from "./savedRangesStorage.js";
 import {
@@ -54,6 +55,8 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const [savedRangeId, setSavedRangeId] = useState(null);
   const [localDeducted, setLocalDeducted] = useState([]);
   const [localAdded, setLocalAdded] = useState([]);
+  const [todoDialogOpen, setTodoDialogOpen] = useState(false);
+  const [todoDialogDate, setTodoDialogDate] = useState(null);
   const lockLongPressTimer = useRef(null);
   const lockLongPressFired = useRef(false);
   const lockLongPressJustFired = useRef(false);
@@ -871,6 +874,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
                 onDayClick={handleDayClick}
                 onDayHover={handleDayHover}
                 onDayToggle={handleDayToggle}
+                onDayLongPress={isReviewMode ? (date) => { setTodoDialogDate(date); setTodoDialogOpen(true); } : undefined}
               />
             </div>
           );
@@ -949,6 +953,13 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
           deleteSavedRange(id);
           setSavedRanges(loadSavedRanges());
         }}
+      />
+      <TodoDialog
+        open={todoDialogOpen}
+        onClose={() => setTodoDialogOpen(false)}
+        rangeId={savedRangeId ?? undefined}
+        dateKey={todoDialogDate ? toDateKey(todoDialogDate) : undefined}
+        dateLabel={todoDialogDate ? formatLong(todoDialogDate) : undefined}
       />
 
       <style>{`

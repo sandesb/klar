@@ -5,6 +5,7 @@ import { Toaster } from "react-hot-toast";
 import { Instagram, Youtube, Linkedin, Github } from "lucide-react";
 import Calendar2026 from "./calendar-2026.jsx";
 import Calendar2082 from "./calendar-2082.jsx";
+import Help from "./components/Help.jsx";
 
 const SOCIAL_LINKS = [
   { Icon: Instagram, href: "https://instagram.com/sandesb_" },
@@ -13,12 +14,10 @@ const SOCIAL_LINKS = [
   { Icon: Github, href: "https://github.com/sandesb" },
 ];
 
-function CalendarToggle({ isBS, onSwitch }) {
+function CalendarToggle({ isBS, onSwitch, noPad }) {
   return (
     <div
       style={{
-        paddingTop: "16px",
-        paddingBottom: "8px",
         display: "flex",
         justifyContent: "center",
         gap: "0",
@@ -32,9 +31,9 @@ function CalendarToggle({ isBS, onSwitch }) {
           fontSize: "11px",
           letterSpacing: "0.15em",
           textTransform: "uppercase",
-          color: !isBS ? "#e8d5b7" : "rgba(232,213,183,0.4)",
+          color: !isBS ? "#e8d5b7" : "rgba(245,166,35,0.7)",
           background: !isBS ? "rgba(245,166,35,0.15)" : "transparent",
-          border: "1px solid rgba(255,255,255,0.1)",
+          border: !isBS ? "1px solid rgba(245,166,35,0.55)" : "1px solid rgba(245,166,35,0.45)",
           borderRight: "none",
           padding: "8px 16px",
           borderRadius: "8px 0 0 8px",
@@ -52,9 +51,9 @@ function CalendarToggle({ isBS, onSwitch }) {
           fontSize: "11px",
           letterSpacing: "0.15em",
           textTransform: "uppercase",
-          color: isBS ? "#e8d5b7" : "rgba(232,213,183,0.4)",
+          color: isBS ? "#e8d5b7" : "rgba(245,166,35,0.7)",
           background: isBS ? "rgba(245,166,35,0.15)" : "transparent",
-          border: "1px solid rgba(255,255,255,0.1)",
+          border: isBS ? "1px solid rgba(245,166,35,0.55)" : "1px solid rgba(245,166,35,0.45)",
           padding: "8px 16px",
           borderRadius: "0 8px 8px 0",
           cursor: "pointer",
@@ -70,10 +69,35 @@ function CalendarToggle({ isBS, onSwitch }) {
 function App() {
   const [isBS, setIsBS] = useState(false);
   const [lockedRange, setLockedRange] = useState(null); // { start: Date, end: Date } when locked
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(0deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)" }}>
       <Toaster position="bottom-center" toastOptions={{ style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.25)" } }} />
-      <CalendarToggle isBS={isBS} onSwitch={setIsBS} />
+      <Help open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", paddingTop: "16px", paddingBottom: "8px" }}>
+        <CalendarToggle isBS={isBS} onSwitch={setIsBS} noPad />
+        <button
+          type="button"
+          onClick={() => setHelpOpen(true)}
+          title="Using Klar'y (Demo/Tutorials)"
+          style={{
+            fontFamily: "'DM Mono', monospace",
+            fontSize: "11px",
+            letterSpacing: "0.15em",
+            color: "rgba(70,200,110,0.9)",
+            background: "transparent",
+            border: "1px solid rgba(70,200,110,0.55)",
+            borderRadius: "8px",
+            padding: "8px 12px",
+            cursor: "pointer",
+            outline: "none",
+            lineHeight: 1,
+            boxShadow: "0 0 8px rgba(70,200,110,0.25), inset 0 0 6px rgba(70,200,110,0.05)",
+          }}
+        >
+          ?
+        </button>
+      </div>
       {isBS ? (
         <Calendar2082 lockedRange={lockedRange} onLockRange={setLockedRange} />
       ) : (
