@@ -191,6 +191,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   }
 
   function handleDayClick(date) {
+    if (lockedRange) return;
     if (!rangeStart || (rangeStart && rangeEnd)) {
       setRangeStart(date);
       setRangeEnd(null);

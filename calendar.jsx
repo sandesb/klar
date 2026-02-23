@@ -108,6 +108,7 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
           const isEdgeDay = isS || isE;
           const isSolo = sameDay(date, rangeStart) && !rangeEnd && !hoverDate;
           const isToday = date.toDateString() === today.toDateString();
+          const todayInRange = isToday && (inR || isEdgeDay || isSolo);
           const isWeekend = date.getDay() === 0 || date.getDay() === 6;
           const col = date.getDay();
           const isSaturday = col === 6;
@@ -164,7 +165,9 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
                 padding: "5px 0",
                 cursor: "pointer",
                 borderRadius,
-                background: isCustomExcluded
+                background: isToday && !todayInRange
+                  ? "rgba(70, 200, 110, 0.5)"
+                  : isCustomExcluded
                   ? "rgba(200, 80, 80, 0.35)"
                   : isCustomWorking
                     ? "rgba(80, 140, 200, 0.4)"
@@ -173,7 +176,9 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
                       : isEdgeDay || isSolo
                         ? "linear-gradient(135deg, #f5a623, #e8793a)"
                         : inR ? "rgba(245,166,35,0.2)" : "transparent",
-                color: isCustomExcluded
+                color: isToday && !todayInRange
+                  ? "rgba(220, 255, 220, 0.98)"
+                  : isCustomExcluded
                   ? "rgba(255,200,200,0.9)"
                   : isCustomWorking
                     ? "rgba(200, 220, 255, 0.95)"
@@ -183,12 +188,12 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
                     : isWeekend ? "rgba(232,213,183,0.4)" : "rgba(232,213,183,0.75)",
                 fontSize: "11px",
                 fontFamily: "'DM Mono', monospace",
-                fontWeight: isEdgeDay || isSolo ? "700" : "400",
-                boxShadow: isCustomExcluded ? "0 0 8px rgba(200,80,80,0.5)" : isCustomWorking ? "0 0 8px rgba(80,140,200,0.5)" : isExcludedWeekend ? "0 0 8px rgba(200,80,80,0.5)" : isEdgeDay || isSolo ? "0 0 10px rgba(245,166,35,0.45)" : (isToday && !inR && !isEdgeDay) ? "rgba(245, 166, 35, 0.45) 0px 0px 10px" : "none",
-                outline: isCustomExcluded ? "1px solid rgba(200,80,80,0.6)" : isCustomWorking ? "1px solid rgba(80,140,200,0.6)" : isExcludedWeekend ? "1px solid rgba(200,80,80,0.6)" : (isToday && !inR && !isEdgeDay) ? "1px solid rgba(245,166,35,0.35)" : "none",
+                fontWeight: isToday || isEdgeDay || isSolo ? "700" : "400",
+                boxShadow: isToday ? "0 0 10px rgba(70,200,110,0.55)" : isCustomExcluded ? "0 0 8px rgba(200,80,80,0.5)" : isCustomWorking ? "0 0 8px rgba(80,140,200,0.5)" : isExcludedWeekend ? "0 0 8px rgba(200,80,80,0.5)" : isEdgeDay || isSolo ? "0 0 10px rgba(245,166,35,0.45)" : "none",
+                outline: isToday ? "1px solid rgba(70,200,110,0.75)" : isCustomExcluded ? "1px solid rgba(200,80,80,0.6)" : isCustomWorking ? "1px solid rgba(80,140,200,0.6)" : isExcludedWeekend ? "1px solid rgba(200,80,80,0.6)" : "none",
                 transition: "background 0.1s, color 0.1s",
                 userSelect: "none",
-                zIndex: isEdgeDay ? 1 : 0,
+                zIndex: isEdgeDay || isToday ? 1 : 0,
               }}
             >
               {dayNum}

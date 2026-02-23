@@ -295,6 +295,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
   }
 
   function handleDayClick(date) {
+    if (lockedRange) return;
     if (!rangeStart || (rangeStart && rangeEnd)) {
       setRangeStart(date);
       setRangeEnd(null);
