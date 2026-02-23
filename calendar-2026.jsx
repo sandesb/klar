@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { CalendarRange,CalendarArrowDown,  Lock, LockOpen, CalendarMinus, CalendarPlus, RefreshCw } from "lucide-react";
 
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
@@ -60,6 +60,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const daysLongPressTimer = useRef(null);
   const daysLongPressFired = useRef(false);
   const daysLongPressJustFired = useRef(false);
+  const startMonthRefAD = useRef(null);
 
   function countWeekdays(start, end) {
     let count = 0;
@@ -257,6 +258,43 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       : null;
   const effectiveStart = effectiveRange?.start ?? null;
   const effectiveEnd = effectiveRange?.end ?? null;
+
+  const startADYear = effectiveStart?.getFullYear() ?? null;
+  const endADYear = effectiveEnd?.getFullYear() ?? null;
+  const spanTwoYearsAD = !!(
+    effectiveStart &&
+    effectiveEnd &&
+    startADYear != null &&
+    endADYear != null &&
+    startADYear !== endADYear
+  );
+
+  const displayYearAD =
+    effectiveStart?.getFullYear() ??
+    effectiveEnd?.getFullYear() ??
+    rangeStart?.getFullYear() ??
+    rangeEnd?.getFullYear() ??
+    YEAR;
+
+  const calendarItemsAD = spanTwoYearsAD
+    ? [
+        ...MONTHS_AD.map((monthLabel, monthIndex) => ({ year: 2025, monthIndex, monthLabel })),
+        { isYearDivider: true, year: 2026 },
+        ...MONTHS_AD.map((monthLabel, monthIndex) => ({ year: 2026, monthIndex, monthLabel })),
+      ]
+    : MONTHS_AD.map((monthLabel, monthIndex) => ({ year: displayYearAD, monthIndex, monthLabel }));
+
+  const yearTitleAD = spanTwoYearsAD ? "2025 – 2026" : String(displayYearAD);
+
+  useEffect(() => {
+    if (!effectiveStart) return;
+    const el = startMonthRefAD.current;
+    if (el) {
+      const t = setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+      return () => clearTimeout(t);
+    }
+  }, [effectiveStart]);
+
   const totalDays = effectiveRange
     ? Math.round((effectiveEnd - effectiveStart) / (1000 * 60 * 60 * 24)) + 1
     : 0;
@@ -418,7 +456,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
             textShadow: "0 -80px 120px rgba(187, 187, 187, 0.37)",
           }}
         >
-          {YEAR}
+          {yearTitleAD}
         </h1>
         <div
           style={{
@@ -788,24 +826,54 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
           gap: "12px",
         }}
       >
-        {MONTHS_AD.map((monthName, i) => (
-          <MonthCalendar
-            key={i}
-            monthLabel={monthName}
-            cells={buildADCells(YEAR, i)}
-            rangeStart={effectiveStart}
-            rangeEnd={effectiveEnd}
-            hoverDate={hoverDate}
-            excludeWeekends={excludeWeekends && !customWorkingDays}
-            customWorkingDays={customWorkingDays}
-            deducted={localDeducted}
-            added={localAdded}
-            isReviewMode={isReviewMode}
-            onDayClick={handleDayClick}
-            onDayHover={handleDayHover}
-            onDayToggle={handleDayToggle}
-          />
-        ))}
+        {calendarItemsAD.map((item) => {
+          if (item.isYearDivider) {
+            return (
+              <div
+                key={`divider-${item.year}`}
+                style={{
+                  gridColumn: "1 / -1",
+                  textAlign: "center",
+                  padding: "12px 0 4px",
+                  fontFamily: "'Playfair Display', serif",
+                  fontSize: "clamp(28px, 4vw, 42px)",
+                  color: "rgba(245,166,35,0.85)",
+                  letterSpacing: "0.02em",
+                  borderTop: "1px solid rgba(245,166,35,0.2)",
+                  marginTop: "8px",
+                }}
+              >
+                {item.year}
+              </div>
+            );
+          }
+          const isStartMonth =
+            effectiveStart &&
+            item.year === effectiveStart.getFullYear() &&
+            item.monthIndex === effectiveStart.getMonth();
+          return (
+            <div
+              key={`${item.year}-${item.monthIndex}`}
+              ref={isStartMonth ? startMonthRefAD : undefined}
+            >
+              <MonthCalendar
+                monthLabel={spanTwoYearsAD && item.year === 2026 ? `${item.monthLabel} (2026)` : item.monthLabel}
+                cells={buildADCells(item.year, item.monthIndex)}
+                rangeStart={effectiveStart}
+                rangeEnd={effectiveEnd}
+                hoverDate={hoverDate}
+                excludeWeekends={excludeWeekends && !customWorkingDays}
+                customWorkingDays={customWorkingDays}
+                deducted={localDeducted}
+                added={localAdded}
+                isReviewMode={isReviewMode}
+                onDayClick={handleDayClick}
+                onDayHover={handleDayHover}
+                onDayToggle={handleDayToggle}
+              />
+            </div>
+          );
+        })}
       </div>
 
       <div
