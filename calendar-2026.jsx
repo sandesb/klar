@@ -57,6 +57,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const [localAdded, setLocalAdded] = useState([]);
   const [todoDialogOpen, setTodoDialogOpen] = useState(false);
   const [heartActive, setHeartActive] = useState(false);
+  const [bulbLit, setBulbLit] = useState(true);
   const [excludeBadgeKey, setExcludeBadgeKey]     = useState(0);
   const [excludeBadgeDelta, setExcludeBadgeDelta] = useState(0);
   const [excludeBadgeShow, setExcludeBadgeShow]   = useState(false);
@@ -454,8 +455,8 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     <div
       className="calendar-page"
       style={{
-        fontFamily: "'DM Mono', monospace",
-        padding: "36px 24px 60px",
+      fontFamily: "'DM Mono', monospace",
+      padding: "36px 24px 60px",
       }}
     >
       <link
@@ -467,17 +468,45 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       <h1
           className="brand-title"
           style={{
-            fontFamily: "'Playfair Display', serif",
-            fontSize: "clamp(48px,8vw,90px)",
+          fontFamily: "'Playfair Display', serif",
+          fontSize: "clamp(48px,8vw,90px)",
             color: "#e8d5b7",
             margin: 0,
-            letterSpacing: "-0.02em",
+            letterSpacing: "0.04em",
             lineHeight: 1,
             textShadow: "0 10px 60px rgba(115, 114, 117, 0.73)",
           }}
         >
           Klar
-          <span style={{ color: "rgba(245, 165, 35, 0.8)" }}>'</span>
+          <span
+            onClick={() => setBulbLit(v => !v)}
+            title={bulbLit ? "Click to turn off" : "Click to turn on"}
+            style={{ cursor: "pointer", display: "inline-block", verticalAlign: "top",
+              lineHeight: 0, margin: "0.04em 0.04em 0" }}
+          >
+            <svg
+              viewBox="0 0 10 15"
+              width="0.2em" height="0.3em"
+              xmlns="http://www.w3.org/2000/svg"
+              className={bulbLit ? "klary-bulb-on" : "klary-bulb-off"}
+              style={{ overflow: "visible", display: "block", transition: "filter 0.6s ease" }}
+              aria-hidden="true"
+            >
+              {/* Apostrophe teardrop: fat round top, tapers to a curved point at bottom */}
+              <path
+                d="M5 0.5 C2.2 0.5 0.5 2.4 0.5 4.8 C0.5 7.6 2.2 10.2 5 14 C7.8 10.2 9.5 7.6 9.5 4.8 C9.5 2.4 7.8 0.5 5 0.5 Z"
+                fill={bulbLit ? "#f5a623" : "rgba(180,140,70,0.22)"}
+                style={{ transition: "fill 0.5s ease" }}
+              />
+              {/* Specular highlight: small arc upper-left, like a lit bulb */}
+              {bulbLit && (
+                <path d="M3 2.2 Q2.2 3.5 2.6 5"
+                  fill="none" stroke="rgba(255,255,255,0.45)"
+                  strokeWidth="0.9" strokeLinecap="round"
+                />
+              )}
+            </svg>
+          </span>
           y
         </h1>
         <div
@@ -968,7 +997,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
               key={`${item.year}-${item.monthIndex}`}
               ref={isStartMonth ? startMonthRefAD : undefined}
             >
-              <MonthCalendar
+          <MonthCalendar
                 monthLabel={spanTwoYearsAD && item.year === 2026 ? `${item.monthLabel} (2026)` : item.monthLabel}
                 cells={buildADCells(item.year, item.monthIndex)}
                 rangeStart={heartStart}
@@ -1009,12 +1038,13 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
           },
           { bg: "rgba(245,166,35,0.2)", r: "3px", label: "In Range" },
           {
-            bg: "transparent",
+            bg: "rgba(70,200,110,0.5)",
             r: "50%",
-            bdr: "1px solid rgba(245,166,35,0.4)",
+            bdr: "1px solid rgba(70,200,110,0.75)",
+            bsh: "0 0 8px rgba(70,200,110,0.45)",
             label: "Today",
           },
-        ].map(({ bg, r, bdr, label }) => (
+        ].map(({ bg, r, bdr, bsh, label }) => (
           <span
             key={label}
             style={{ display: "flex", alignItems: "center", gap: "7px" }}
@@ -1026,6 +1056,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
                 borderRadius: r,
                 background: bg,
                 border: bdr,
+                boxShadow: bsh,
                 display: "inline-block",
                 flexShrink: 0,
               }}
@@ -1079,6 +1110,15 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
           .brand-title { font-size: clamp(56px, 18vw, 80px) !important; }
         }
         @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:.9} }
+        @keyframes klary-bulb-pulse {
+          0%,100% { filter: drop-shadow(0 0 4px rgba(245,165,35,0.38))
+                            drop-shadow(0 0 10px rgba(245,165,35,0.14)); }
+          50%     { filter: drop-shadow(0 0 8px rgba(252,200,100,0.6))
+                            drop-shadow(0 0 20px rgba(245,165,35,0.28))
+                            drop-shadow(0 0 36px rgba(245,165,35,0.1)); }
+        }
+        .klary-bulb-on  { animation: klary-bulb-pulse 3s ease-in-out infinite; }
+        .klary-bulb-off { filter: none; }
         input::placeholder { color: rgba(232,213,183,0.18); }
         input:focus { border-color: rgba(245,166,35,0.5) !important; background: rgba(245,166,35,0.1) !important; }
       `}</style>
