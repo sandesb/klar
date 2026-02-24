@@ -1,5 +1,5 @@
 import "./main.css";
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Toaster } from "react-hot-toast";
 import { Instagram, Youtube, Linkedin, Github } from "lucide-react";
@@ -71,19 +71,6 @@ function App() {
   const [lockedRange, setLockedRange] = useState(null); // { start: Date, end: Date } when locked
   const [helpOpen, setHelpOpen] = useState(false);
   const [glowStopped, setGlowStopped] = useState(false);
-  const glowLongPressTimer = useRef(null);
-
-  function startGlowLongPress() {
-    glowLongPressTimer.current = setTimeout(() => {
-      setGlowStopped(v => !v);
-    }, 600);
-  }
-  function clearGlowLongPress() {
-    if (glowLongPressTimer.current) {
-      clearTimeout(glowLongPressTimer.current);
-      glowLongPressTimer.current = null;
-    }
-  }
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(0deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)" }}>
@@ -93,14 +80,8 @@ function App() {
         <CalendarToggle isBS={isBS} onSwitch={setIsBS} noPad />
         <button
           type="button"
-          onClick={() => setHelpOpen(true)}
-          onMouseDown={startGlowLongPress}
-          onMouseUp={clearGlowLongPress}
-          onMouseLeave={clearGlowLongPress}
-          onTouchStart={startGlowLongPress}
-          onTouchEnd={clearGlowLongPress}
-          onTouchCancel={clearGlowLongPress}
-          title={glowStopped ? "Using Klar'y (Demo/Tutorials) · long-press to re-enable glow" : "Using Klar'y (Demo/Tutorials) · long-press to stop glow"}
+          onClick={() => { setHelpOpen(true); setGlowStopped(true); }}
+          title="Using Klar'y (Demo/Tutorials)"
           className={glowStopped ? "help-btn-pulse-stopped" : "help-btn-pulse"}
           style={{
             fontFamily: "'DM Mono', monospace",
