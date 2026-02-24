@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { CalendarRange,CalendarArrowDown,  Lock, LockOpen, CalendarMinus, CalendarPlus, RefreshCw } from "lucide-react";
+import { CalendarRange,CalendarArrowDown,  Lock, LockOpen, CalendarMinus, CalendarPlus, CalendarHeart, RefreshCw } from "lucide-react";
 
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
 import SaveRangeDialog from "./components/SaveRangeDialog.jsx";
@@ -56,6 +56,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const [localDeducted, setLocalDeducted] = useState([]);
   const [localAdded, setLocalAdded] = useState([]);
   const [todoDialogOpen, setTodoDialogOpen] = useState(false);
+  const [heartActive, setHeartActive] = useState(false);
   const [todoDialogDate, setTodoDialogDate] = useState(null);
   const lockLongPressTimer = useRef(null);
   const lockLongPressFired = useRef(false);
@@ -147,6 +148,8 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     };
     saveSavedRange(entry);
     setSavedRanges(loadSavedRanges());
+    setShowSaveDialog(false);
+    setShowSavedRangesDialog(true);
   }
 
   function handleLoadSavedRange(entry) {
@@ -404,7 +407,44 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   }
 
   const isReviewMode = !!(lockedRange && savedRangeId);
-  const displayWorkingDays = isReviewMode ? adjustedWorkingDays : effectiveDays;
+
+  // ── CalendarHeart: remaining days from today ──────────────
+  // Reset toggle whenever the range itself changes
+  useEffect(() => { setHeartActive(false); },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [effectiveStart?.getTime(), effectiveEnd?.getTime()]
+  );
+
+  const todayMidnight = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+  // heartStart = today only when heart is on AND today is strictly inside the range
+  const heartStart = (heartActive && effectiveStart && effectiveEnd &&
+    todayMidnight > effectiveStart && todayMidnight <= effectiveEnd)
+    ? todayMidnight
+    : effectiveStart;
+
+  const heartTotalDays = heartStart && effectiveEnd
+    ? Math.max(0, Math.round((effectiveEnd - heartStart) / (1000 * 60 * 60 * 24)) + 1)
+    : 0;
+  const heartEffectiveDays = heartStart && effectiveEnd && customWorkingDays != null
+    ? countCustomWorkingDays(heartStart, effectiveEnd, customWorkingDays)
+    : heartStart && effectiveEnd && excludeWeekends
+      ? countWeekdays(heartStart, effectiveEnd)
+      : heartTotalDays;
+  const heartDeductedInRange = localDeducted.filter(key => {
+    const [y,m,d] = key.split("-").map(Number);
+    const dt = new Date(y,m-1,d);
+    return heartStart && effectiveEnd && dt >= heartStart && dt <= effectiveEnd;
+  }).length;
+  const heartAddedInRange = localAdded.filter(key => {
+    const [y,m,d] = key.split("-").map(Number);
+    const dt = new Date(y,m-1,d);
+    return heartStart && effectiveEnd && dt >= heartStart && dt <= effectiveEnd;
+  }).length;
+  const heartAdjustedDays = Math.max(0, heartEffectiveDays - heartDeductedInRange + heartAddedInRange);
+
+  const displayWorkingDays = heartActive
+    ? (isReviewMode ? heartAdjustedDays : heartEffectiveDays)
+    : (isReviewMode ? adjustedWorkingDays : effectiveDays);
 
   return (
     <div
@@ -642,9 +682,9 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
                   display: "inline-block",
                 }}
               />
-              {formatLong(effectiveStart)} → {formatLong(effectiveEnd)}
+              {formatLong(heartStart)} → {formatLong(effectiveEnd)}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
-              <span style={{ color: "rgba(232,213,183,0.55)" }}>{displayWorkingDays} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}</span>
+              <span style={{ color: "rgba(232,213,183,0.55)" }}>{displayWorkingDays} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}{heartActive ? " left" : ""}</span>
               <button
                 type="button"
                 onClick={() => {
@@ -685,6 +725,24 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
                 }}
               >
                 <CalendarPlus size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setHeartActive(v => !v)}
+                title="Remaining days from today"
+                style={{
+                  marginLeft: "2px",
+                  background: "transparent",
+                  border: "none",
+                  padding: "4px",
+                  cursor: "pointer",
+                  color: heartActive ? "rgba(220,80,120,0.9)" : "rgba(232,213,183,0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <CalendarHeart size={16} />
               </button>
               <button
                 type="button"
@@ -863,7 +921,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
               <MonthCalendar
                 monthLabel={spanTwoYearsAD && item.year === 2026 ? `${item.monthLabel} (2026)` : item.monthLabel}
                 cells={buildADCells(item.year, item.monthIndex)}
-                rangeStart={effectiveStart}
+                rangeStart={heartStart}
                 rangeEnd={effectiveEnd}
                 hoverDate={hoverDate}
                 excludeWeekends={excludeWeekends && !customWorkingDays}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { CalendarRange, CalendarMinus, CalendarPlus, Lock, LockOpen } from "lucide-react";
+import { CalendarRange, CalendarMinus, CalendarPlus, CalendarHeart, Lock, LockOpen } from "lucide-react";
 import { MonthCalendar, DateInput, formatDate, formatLong, toDateKey } from "./calendar.jsx";
 import toast from "react-hot-toast";
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
@@ -161,6 +161,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
   const [savedRanges, setSavedRanges] = useState(() => loadSavedRanges());
   const [showSavedRangesDialog, setShowSavedRangesDialog] = useState(false);
   const [savedRangeTitle, setSavedRangeTitle] = useState(null);
+  const [heartActive, setHeartActive] = useState(false);
   const lockLongPressTimer = useRef(null);
   const lockLongPressFired = useRef(false);
   const lockLongPressJustFired = useRef(false);
@@ -371,6 +372,26 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
     : effectiveRange && excludeWeekends
       ? countWeekdays(effectiveStart, effectiveEnd)
       : totalDays;
+
+  // ── CalendarHeart: remaining days from today ──────────────
+  useEffect(() => { setHeartActive(false); },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [effectiveStart?.getTime(), effectiveEnd?.getTime()]
+  );
+  const todayMidnight = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+  const heartStart = (heartActive && effectiveStart && effectiveEnd &&
+    todayMidnight > effectiveStart && todayMidnight <= effectiveEnd)
+    ? todayMidnight
+    : effectiveStart;
+  const heartTotalDays = heartStart && effectiveEnd
+    ? Math.max(0, Math.round((effectiveEnd - heartStart) / ONE_DAY_MS) + 1)
+    : 0;
+  const heartEffectiveDays = heartStart && effectiveEnd && customWorkingDays != null
+    ? countCustomWorkingDays(heartStart, effectiveEnd, customWorkingDays)
+    : heartStart && effectiveEnd && excludeWeekends
+      ? countWeekdays(heartStart, effectiveEnd)
+      : heartTotalDays;
+  const displayWorkingDaysBS = heartActive ? heartEffectiveDays : effectiveDays;
 
   const displayYear =
     getBSYearForDate(effectiveStart) ??
@@ -639,9 +660,9 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
                   display: "inline-block",
                 }}
               />
-              {formatLongBS(effectiveStart) || `${formatLong(effectiveStart)} (A.D)`} → {formatLongBS(effectiveEnd) || `${formatLong(effectiveEnd)} (A.D)`}
+              {formatLongBS(heartStart) || `${formatLong(heartStart)} (A.D)`} → {formatLongBS(effectiveEnd) || `${formatLong(effectiveEnd)} (A.D)`}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
-              <span style={{ color: "rgba(232,213,183,0.55)" }}>{effectiveDays} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}</span>
+              <span style={{ color: "rgba(232,213,183,0.55)" }}>{displayWorkingDaysBS} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}{heartActive ? " left" : ""}</span>
               <button
                 type="button"
                 onClick={() => {
@@ -680,6 +701,24 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
                 }}
               >
                 <CalendarPlus size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setHeartActive(v => !v)}
+                title="Remaining days from today"
+                style={{
+                  marginLeft: "2px",
+                  background: "transparent",
+                  border: "none",
+                  padding: "4px",
+                  cursor: "pointer",
+                  color: heartActive ? "rgba(220,80,120,0.9)" : "rgba(232,213,183,0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <CalendarHeart size={16} />
               </button>
               <button
                 type="button"
@@ -797,7 +836,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
               <MonthCalendar
                 monthLabel={item.year === 2083 && spanTwoYears ? `${item.name_en} (2083)` : item.name_en}
                 cells={buildBSCells(item)}
-                rangeStart={effectiveStart}
+                rangeStart={heartStart}
                 rangeEnd={effectiveEnd}
                 hoverDate={hoverDate}
                 excludeWeekends={excludeWeekends && !customWorkingDays}
