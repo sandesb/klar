@@ -162,6 +162,10 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
   const [showSavedRangesDialog, setShowSavedRangesDialog] = useState(false);
   const [savedRangeTitle, setSavedRangeTitle] = useState(null);
   const [heartActive, setHeartActive] = useState(false);
+  const [excludeBadgeKey, setExcludeBadgeKey]     = useState(0);
+  const [excludeBadgeDelta, setExcludeBadgeDelta] = useState(0);
+  const [excludeBadgeShow, setExcludeBadgeShow]   = useState(false);
+  const excludeBadgeTimer = useRef(null);
   const lockLongPressTimer = useRef(null);
   const lockLongPressFired = useRef(false);
   const lockLongPressJustFired = useRef(false);
@@ -662,12 +666,34 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
               />
               {formatLongBS(heartStart) || `${formatLong(heartStart)} (A.D)`} → {formatLongBS(effectiveEnd) || `${formatLong(effectiveEnd)} (A.D)`}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
-              <span style={{ color: "rgba(232,213,183,0.55)" }}>{displayWorkingDaysBS} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}{heartActive ? " left" : ""}</span>
+              <span style={{ color: "rgba(232,213,183,0.55)" }}>
+                <span
+                  key={displayWorkingDaysBS}
+                  className="count-tick"
+                  style={{ display: "inline-block", minWidth: "18px", textAlign: "right" }}
+                >{displayWorkingDaysBS}</span>
+                {" "}{excludeWeekends || customWorkingDays != null ? "working days" : "days"}{heartActive ? " left" : ""}
+              </span>
               <button
                 type="button"
                 onClick={() => {
-                  setExcludeWeekends((v) => !v);
-                  if (!excludeWeekends) setCustomWorkingDays(null);
+                  const next = !excludeWeekends;
+                  setExcludeWeekends(next);
+                  if (next) setCustomWorkingDays(null);
+                  if (effectiveStart && effectiveEnd) {
+                    let wknd = 0;
+                    const d = new Date(effectiveStart);
+                    while (d <= effectiveEnd) {
+                      const dow = d.getDay();
+                      if (dow === 0 || dow === 6) wknd++;
+                      d.setDate(d.getDate() + 1);
+                    }
+                    setExcludeBadgeDelta(next ? -wknd : +wknd);
+                    setExcludeBadgeKey(k => k + 1);
+                    setExcludeBadgeShow(true);
+                    if (excludeBadgeTimer.current) clearTimeout(excludeBadgeTimer.current);
+                    excludeBadgeTimer.current = setTimeout(() => setExcludeBadgeShow(false), 2300);
+                  }
                 }}
                 title={excludeWeekends ? "Show all days" : "Exclude weekends (working days)"}
                 style={{
@@ -781,6 +807,31 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
           )}
         </div>
       </div>
+
+      {/* Exclude-weekends delta badge */}
+      {excludeBadgeShow && (
+        <div
+          key={excludeBadgeKey}
+          className="exclude-badge"
+          style={{
+            display: "flex", justifyContent: "center", marginTop: "4px",
+            fontFamily: "'DM Mono', monospace",
+            fontSize: "11px",
+            letterSpacing: "0.08em",
+          }}
+        >
+          <span style={{
+            color: excludeBadgeDelta < 0 ? "rgba(220,90,90,0.95)" : "rgba(70,200,110,0.9)",
+            background: excludeBadgeDelta < 0 ? "rgba(200,80,80,0.12)" : "rgba(70,200,110,0.1)",
+            border: `1px solid ${excludeBadgeDelta < 0 ? "rgba(200,80,80,0.35)" : "rgba(70,200,110,0.3)"}`,
+            borderRadius: "12px",
+            padding: "3px 14px",
+            pointerEvents: "none",
+          }}>
+            {excludeBadgeDelta > 0 ? "+" : ""}{excludeBadgeDelta} weekend days {excludeBadgeDelta < 0 ? "excluded" : "restored"}
+          </span>
+        </div>
+      )}
 
       {savedRangeTitle && (
         <div

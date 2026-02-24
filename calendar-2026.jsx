@@ -57,6 +57,10 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const [localAdded, setLocalAdded] = useState([]);
   const [todoDialogOpen, setTodoDialogOpen] = useState(false);
   const [heartActive, setHeartActive] = useState(false);
+  const [excludeBadgeKey, setExcludeBadgeKey]     = useState(0);
+  const [excludeBadgeDelta, setExcludeBadgeDelta] = useState(0);
+  const [excludeBadgeShow, setExcludeBadgeShow]   = useState(false);
+  const excludeBadgeTimer = useRef(null);
   const [todoDialogDate, setTodoDialogDate] = useState(null);
   const lockLongPressTimer = useRef(null);
   const lockLongPressFired = useRef(false);
@@ -684,13 +688,34 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
               />
               {formatLong(heartStart)} → {formatLong(effectiveEnd)}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
-              <span style={{ color: "rgba(232,213,183,0.55)" }}>{displayWorkingDays} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}{heartActive ? " left" : ""}</span>
+              <span style={{ color: "rgba(232,213,183,0.55)" }}>
+                <span
+                  key={displayWorkingDays}
+                  className="count-tick"
+                  style={{ display: "inline-block", minWidth: "18px", textAlign: "right" }}
+                >{displayWorkingDays}</span>
+                {" "}{excludeWeekends || customWorkingDays != null ? "working days" : "days"}{heartActive ? " left" : ""}
+              </span>
               <button
                 type="button"
                 onClick={() => {
                   const next = !excludeWeekends;
                   setExcludeWeekends(next);
                   if (next) setCustomWorkingDays(null);
+                  if (effectiveStart && effectiveEnd) {
+                    let wknd = 0;
+                    const d = new Date(effectiveStart);
+                    while (d <= effectiveEnd) {
+                      const dow = d.getDay();
+                      if (dow === 0 || dow === 6) wknd++;
+                      d.setDate(d.getDate() + 1);
+                    }
+                    setExcludeBadgeDelta(next ? -wknd : +wknd);
+                    setExcludeBadgeKey(k => k + 1);
+                    setExcludeBadgeShow(true);
+                    if (excludeBadgeTimer.current) clearTimeout(excludeBadgeTimer.current);
+                    excludeBadgeTimer.current = setTimeout(() => setExcludeBadgeShow(false), 2300);
+                  }
                   toast.success(next ? "Exclude weekends applied" : "Exclude weekends removed", { style: { fontFamily: "'DM Mono', monospace" } });
                 }}
                 title={excludeWeekends ? "Show all days" : "Exclude weekends (working days)"}
@@ -811,6 +836,31 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
         </div>
       </div>
 
+      {/* Exclude-weekends delta badge */}
+      {excludeBadgeShow && (
+        <div
+          key={excludeBadgeKey}
+          className="exclude-badge"
+          style={{
+            display: "flex", justifyContent: "center", marginTop: "4px",
+            fontFamily: "'DM Mono', monospace",
+            fontSize: "11px",
+            letterSpacing: "0.08em",
+          }}
+        >
+          <span style={{
+            color: excludeBadgeDelta < 0 ? "rgba(220,90,90,0.95)" : "rgba(70,200,110,0.9)",
+            background: excludeBadgeDelta < 0 ? "rgba(200,80,80,0.12)" : "rgba(70,200,110,0.1)",
+            border: `1px solid ${excludeBadgeDelta < 0 ? "rgba(200,80,80,0.35)" : "rgba(70,200,110,0.3)"}`,
+            borderRadius: "12px",
+            padding: "3px 14px",
+            pointerEvents: "none",
+          }}>
+            {excludeBadgeDelta > 0 ? "+" : ""}{excludeBadgeDelta} weekend days {excludeBadgeDelta < 0 ? "excluded" : "restored"}
+          </span>
+        </div>
+      )}
+
       {savedRangeTitle && (
         <div
           style={{
@@ -818,7 +868,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
             alignItems: "center",
             justifyContent: "center",
             gap: "12px",
-            marginTop: "8px",
+            marginTop: "4px",
             marginBottom: "12px",
             fontFamily: "'DM Mono', monospace",
             fontSize: "18px",

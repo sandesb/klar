@@ -1,5 +1,5 @@
 import "./main.css";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { Toaster } from "react-hot-toast";
 import { Instagram, Youtube, Linkedin, Github } from "lucide-react";
@@ -70,6 +70,21 @@ function App() {
   const [isBS, setIsBS] = useState(false);
   const [lockedRange, setLockedRange] = useState(null); // { start: Date, end: Date } when locked
   const [helpOpen, setHelpOpen] = useState(false);
+  const [glowStopped, setGlowStopped] = useState(false);
+  const glowLongPressTimer = useRef(null);
+
+  function startGlowLongPress() {
+    glowLongPressTimer.current = setTimeout(() => {
+      setGlowStopped(v => !v);
+    }, 600);
+  }
+  function clearGlowLongPress() {
+    if (glowLongPressTimer.current) {
+      clearTimeout(glowLongPressTimer.current);
+      glowLongPressTimer.current = null;
+    }
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(0deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)" }}>
       <Toaster position="bottom-center" toastOptions={{ style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.25)" } }} />
@@ -79,7 +94,14 @@ function App() {
         <button
           type="button"
           onClick={() => setHelpOpen(true)}
-          title="Using Klar'y (Demo/Tutorials)"
+          onMouseDown={startGlowLongPress}
+          onMouseUp={clearGlowLongPress}
+          onMouseLeave={clearGlowLongPress}
+          onTouchStart={startGlowLongPress}
+          onTouchEnd={clearGlowLongPress}
+          onTouchCancel={clearGlowLongPress}
+          title={glowStopped ? "Using Klar'y (Demo/Tutorials) · long-press to re-enable glow" : "Using Klar'y (Demo/Tutorials) · long-press to stop glow"}
+          className={glowStopped ? "help-btn-pulse-stopped" : "help-btn-pulse"}
           style={{
             fontFamily: "'DM Mono', monospace",
             fontSize: "11px",
@@ -92,7 +114,6 @@ function App() {
             cursor: "pointer",
             outline: "none",
             lineHeight: 1,
-            boxShadow: "0 0 8px rgba(70,200,110,0.25), inset 0 0 6px rgba(70,200,110,0.05)",
           }}
         >
           ?

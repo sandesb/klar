@@ -228,7 +228,7 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
                 fontWeight: isToday || isEdgeDay || isSolo ? "700" : "400",
                 boxShadow: isToday ? "0 0 10px rgba(70,200,110,0.55)" : isCustomExcluded ? "0 0 8px rgba(200,80,80,0.5)" : isCustomWorking ? "0 0 8px rgba(80,140,200,0.5)" : isExcludedWeekend ? "0 0 8px rgba(200,80,80,0.5)" : isEdgeDay || isSolo ? "0 0 10px rgba(245,166,35,0.45)" : "none",
                 outline: isToday ? "1px solid rgba(70,200,110,0.75)" : isCustomExcluded ? "1px solid rgba(200,80,80,0.6)" : isCustomWorking ? "1px solid rgba(80,140,200,0.6)" : isExcludedWeekend ? "1px solid rgba(200,80,80,0.6)" : "none",
-                transition: "background 0.1s, color 0.1s",
+                transition: "background 0.35s ease, color 0.35s ease, box-shadow 0.35s ease, outline 0.35s ease",
                 userSelect: "none",
                 zIndex: isEdgeDay || isToday ? 1 : 0,
               }}
