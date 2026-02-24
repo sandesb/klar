@@ -4,43 +4,51 @@ import {
   CalendarMinus,
   CalendarPlus,
   Lock,
-  LockOpen,
-  MousePointerClick,
   Timer,
   ClipboardList,
-  ChevronRight,
+  Palette,
+  MousePointerClick,
+  Calendar,
+  Briefcase,
+  Bookmark,
 } from "lucide-react";
-import ToggleYearDemo from "./ToggleYearDemo.jsx";
+import ToggleYearDemo        from "./ToggleYearDemo.jsx";
+import PickDateRangeDemo     from "./PickDateRangeDemo.jsx";
+import ManualDateEntryDemo   from "./ManualDateEntryDemo.jsx";
+import DaysModeDemo          from "./DaysModeDemo.jsx";
+import ExcludeWeekendsDemo   from "./ExcludeWeekendsDemo.jsx";
+import CustomWorkingDaysDemo from "./CustomWorkingDaysDemo.jsx";
+import LockSwitchDemo        from "./LockSwitchDemo.jsx";
+import SaveRangeDemo         from "./SaveRangeDemo.jsx";
+import TodoTasksDemo         from "./TodoTasksDemo.jsx";
+import ColorSystemDemo       from "./ColorSystemDemo.jsx";
 
-const GOLD = "rgba(245,166,35,0.9)";
-const DIM = "rgba(232,213,183,0.65)";
-const MONO = "'DM Mono', monospace";
+const GOLD  = "rgba(245,166,35,0.9)";
+const MONO  = "'DM Mono', monospace";
 const SERIF = "'Playfair Display', serif";
 
-function IconChip({ children }) {
+// ─── Category section header ───────────────────────────────────
+function SectionHeader({ icon: Icon, label }) {
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "4px",
-        background: "rgba(245,166,35,0.1)",
-        border: "1px solid rgba(245,166,35,0.25)",
-        borderRadius: "8px",
-        padding: "3px 8px",
-        color: GOLD,
-        fontFamily: MONO,
-        fontSize: "11px",
-        verticalAlign: "middle",
+    <div style={{
+      display: "flex", alignItems: "center", gap: "8px",
+      marginBottom: "8px", marginTop: "18px",
+    }}>
+      <Icon size={11} color="rgba(245,166,35,0.5)" />
+      <span style={{
+        fontFamily: MONO, fontSize: "9px", letterSpacing: "0.22em",
+        textTransform: "uppercase", color: "rgba(245,166,35,0.45)",
         whiteSpace: "nowrap",
-      }}
-    >
-      {children}
-    </span>
+      }}>
+        {label}
+      </span>
+      <div style={{ flex: 1, height: "1px", background: "rgba(245,166,35,0.12)" }} />
+    </div>
   );
 }
 
-function Row({ icon: Icon, iconColor = GOLD, label, desc, onClick }) {
+// ─── Individual icon card ──────────────────────────────────────
+function IconCard({ iconContent, label, onClick, hasTryIt, dim }) {
   const [hovered, setHovered] = useState(false);
   return (
     <div
@@ -48,297 +56,300 @@ function Row({ icon: Icon, iconColor = GOLD, label, desc, onClick }) {
       onMouseEnter={() => onClick && setHovered(true)}
       onMouseLeave={() => onClick && setHovered(false)}
       style={{
-        display: "flex",
-        gap: "14px",
-        alignItems: "flex-start",
-        padding: "12px 0",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        position: "relative",
+        display: "flex", flexDirection: "column",
+        alignItems: "center", gap: "7px",
+        padding: "11px 6px 10px",
+        borderRadius: "12px",
+        background: hovered
+          ? "rgba(245,166,35,0.09)"
+          : dim
+            ? "rgba(255,255,255,0.015)"
+            : "rgba(255,255,255,0.03)",
+        border: hovered
+          ? "1px solid rgba(245,166,35,0.32)"
+          : "1px solid rgba(255,255,255,0.07)",
         cursor: onClick ? "pointer" : "default",
-        background: hovered ? "rgba(245,166,35,0.04)" : "transparent",
-        borderRadius: onClick ? "8px" : "0",
-        transition: "background 0.15s ease",
-        margin: onClick ? "0 -6px" : "0",
-        paddingLeft: onClick ? "6px" : "0",
-        paddingRight: onClick ? "6px" : "0",
+        transition: "background 0.15s ease, border-color 0.15s ease",
+        userSelect: "none",
       }}
     >
-      <div
-        style={{
-          flexShrink: 0,
-          width: "34px",
-          height: "34px",
-          borderRadius: "10px",
-          background: "rgba(245,166,35,0.08)",
-          border: "1px solid rgba(245,166,35,0.18)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: iconColor,
-        }}
-      >
-        {Icon && <Icon size={17} />}
+      {/* green dot for items with a demo */}
+      {hasTryIt && (
+        <div style={{
+          position: "absolute", top: "7px", right: "7px",
+          width: "5px", height: "5px", borderRadius: "50%",
+          background: "rgba(70,200,110,0.8)",
+          boxShadow: "0 0 5px rgba(70,200,110,0.6)",
+        }} />
+      )}
+
+      {/* icon box */}
+      <div style={{
+        width: "36px", height: "36px", borderRadius: "10px",
+        background: dim ? "rgba(245,166,35,0.04)" : "rgba(245,166,35,0.08)",
+        border: "1px solid rgba(245,166,35,0.14)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: dim ? "rgba(245,166,35,0.45)" : GOLD,
+      }}>
+        {iconContent}
       </div>
-      <div style={{ flex: 1 }}>
-        <div
-          style={{
-            fontFamily: MONO,
-            fontSize: "11px",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: GOLD,
-            marginBottom: "3px",
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-          }}
-        >
-          {label}
-          {onClick && (
-            <>
-              <span
-                style={{
-                  marginLeft: "8px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  background: "rgba(70,200,110,0.12)",
-                  border: "1px solid rgba(70,200,110,0.4)",
-                  borderRadius: "6px",
-                  padding: "2px 8px",
-                  fontSize: "9px",
-                  letterSpacing: "0.12em",
-                  color: "rgba(70,200,110,0.9)",
-                  fontFamily: MONO,
-                  textTransform: "uppercase",
-                  cursor: "pointer",
-                }}
-              >
-                Try it
-              </span>
-              <ChevronRight size={12} style={{ color: "rgba(245,166,35,0.5)", marginLeft: "auto" }} />
-            </>
-          )}
-        </div>
-        <div
-          style={{
-            fontFamily: MONO,
-            fontSize: "11.5px",
-            color: DIM,
-            lineHeight: 1.6,
-          }}
-        >
-          {desc}
-        </div>
+
+      {/* label */}
+      <div style={{
+        fontFamily: MONO, fontSize: "9px", letterSpacing: "0.04em",
+        textTransform: "uppercase", textAlign: "center", lineHeight: 1.35,
+        color: dim ? "rgba(232,213,183,0.35)" : "rgba(232,213,183,0.65)",
+        maxWidth: "80px",
+      }}>
+        {label}
       </div>
     </div>
   );
 }
 
+// ─── Main Help component ───────────────────────────────────────
 export default function Help({ open, onClose }) {
   const [activeDemo, setActiveDemo] = useState(null);
 
   if (!open) return null;
 
+  function go(demoId) { setActiveDemo(demoId); }
+  function back()     { setActiveDemo(null);   }
+
   return (
     <div
       onClick={activeDemo ? undefined : onClose}
       style={{
-        position: "fixed",
-        inset: 0,
+        position: "fixed", inset: 0,
         background: "rgba(0,0,0,0.65)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 2000,
-        padding: "16px",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 2000, padding: "16px",
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
         style={{
           position: "relative",
-          background: "linear-gradient(180deg, #1a0e00 0%, #0d0805 100%)",
+          background: "linear-gradient(180deg,#1a0e00 0%,#0d0805 100%)",
           border: "1px solid rgba(245,166,35,0.25)",
           borderRadius: "16px",
-          padding: "28px 28px 20px",
+          padding: "26px 24px 20px",
           boxShadow: "0 16px 48px rgba(0,0,0,0.6), 0 0 24px rgba(245,166,35,0.07)",
-          width: "100%",
-          maxWidth: "520px",
-          maxHeight: "90vh",
-          overflowY: "auto",
+          width: "100%", maxWidth: "520px",
+          maxHeight: "90vh", overflowY: "auto",
         }}
       >
-        {/* close */}
+        {/* close button */}
         <button
-          type="button"
-          onClick={onClose}
+          type="button" onClick={onClose}
           style={{
-            position: "absolute",
-            top: "14px",
-            right: "14px",
-            background: "transparent",
-            border: "none",
-            color: "rgba(232,213,183,0.45)",
-            fontSize: "16px",
-            cursor: "pointer",
-            lineHeight: 1,
-            padding: "4px 6px",
-            fontFamily: MONO,
+            position: "absolute", top: "14px", right: "14px",
+            background: "transparent", border: "none",
+            color: "rgba(232,213,183,0.45)", fontSize: "16px",
+            cursor: "pointer", lineHeight: 1,
+            padding: "4px 6px", fontFamily: MONO,
           }}
           title="Close"
-        >
-          ✕
-        </button>
+        >✕</button>
 
-        {activeDemo === "toggleYear" ? (
-          <ToggleYearDemo onBack={() => setActiveDemo(null)} />
-        ) : (
+        {/* ─── DEMO router ─────────────────────────────────────── */}
+        {activeDemo === "toggleYear"        ? <ToggleYearDemo        onBack={back} />
+        : activeDemo === "pickDateRange"    ? <PickDateRangeDemo     onBack={back} />
+        : activeDemo === "manualDateEntry"  ? <ManualDateEntryDemo   onBack={back} />
+        : activeDemo === "daysMode"         ? <DaysModeDemo          onBack={back} />
+        : activeDemo === "excludeWeekends"  ? <ExcludeWeekendsDemo   onBack={back} />
+        : activeDemo === "customWorkingDays"? <CustomWorkingDaysDemo  onBack={back} />
+        : activeDemo === "lockSwitch"       ? <LockSwitchDemo        onBack={back} />
+        : activeDemo === "saveRange"        ? <SaveRangeDemo         onBack={back} />
+        : activeDemo === "todoTasks"        ? <TodoTasksDemo         onBack={back} />
+        : activeDemo === "colorSystem"      ? <ColorSystemDemo       onBack={back} />
+
+        /* ─── MAIN GRID ─────────────────────────────────────── */
+        : (
           <>
-          {/* heading */}
-          <div style={{ marginBottom: "20px" }}>
-            <div
-              style={{
-                fontFamily: SERIF,
-                fontSize: "22px",
-                color: "#e8d5b7",
-                letterSpacing: "0.03em",
-                marginBottom: "4px",
-              }}
-            >
-              Using Klar<span style={{ color: "rgba(237, 135, 19, 0.9)" }}>'</span>y (Demo/Tutorial)
+            {/* Heading */}
+            <div style={{ marginBottom: "4px" }}>
+              <div style={{
+                fontFamily: SERIF, fontSize: "22px",
+                color: "#e8d5b7", letterSpacing: "0.03em", marginBottom: "3px",
+              }}>
+                Using Klar<span style={{ color: "rgba(237,135,19,0.9)" }}>'</span>y
+              </div>
+              <div style={{
+                fontFamily: MONO, fontSize: "10px", letterSpacing: "0.18em",
+                textTransform: "uppercase", color: "rgba(245,166,35,0.45)",
+                display: "flex", alignItems: "center", gap: "8px",
+              }}>
+                Demo &amp; Guide
+                <span style={{
+                  fontFamily: MONO, fontSize: "8.5px", letterSpacing: "0.08em",
+                  color: "rgba(70,200,110,0.7)",
+                  background: "rgba(70,200,110,0.08)",
+                  border: "1px solid rgba(70,200,110,0.2)",
+                  borderRadius: "5px", padding: "1px 6px",
+                }}>● try it</span>
+              </div>
             </div>
-            <div
-              style={{
-                fontFamily: MONO,
-                fontSize: "10px",
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                color: "rgba(245,166,35,0.5)",
-              }}
-            >
-              Quick Guide
+
+            {/* ── CATEGORY 1: Calendar & Dates ── */}
+            <SectionHeader icon={Calendar} label="Calendar & Dates" />
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: "7px",
+            }}>
+              <IconCard
+                iconContent={
+                  <span style={{ fontFamily: MONO, fontSize: "11px",
+                    fontWeight: "700", letterSpacing: "0.05em", color: GOLD }}>
+                    AD
+                  </span>
+                }
+                label="Year Toggle"
+                onClick={() => go("toggleYear")}
+                hasTryIt
+              />
+              <IconCard
+                iconContent={<MousePointerClick size={17} />}
+                label="Pick Range"
+                onClick={() => go("pickDateRange")}
+                hasTryIt
+              />
+              <IconCard
+                iconContent={
+                  <span style={{ fontFamily: MONO, fontSize: "13px",
+                    fontWeight: "700", color: GOLD }}>
+                    6/7
+                  </span>
+                }
+                label="Manual Entry"
+                onClick={() => go("manualDateEntry")}
+                hasTryIt
+              />
+              <IconCard
+                iconContent={<CalendarRange size={17} />}
+                label="Days Mode"
+                onClick={() => go("daysMode")}
+                hasTryIt
+              />
             </div>
-          </div>
 
-          {/* rows */}
-          <Row
-            icon={() => (
-              <span style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.1em", color: GOLD }}>
-                A.D
-              </span>
-            )}
-            label="Toggle Year System"
-            desc={
-              <>
-                Switch between <IconChip>A.D</IconChip> (English) and{" "}
-                <IconChip>B.S</IconChip> (Nepali / Bikram Sambat) calendar views.
-              </>
-            }
-            onClick={() => setActiveDemo("toggleYear")}
-          />
+            {/* ── CATEGORY 2: Working Days ── */}
+            <SectionHeader icon={Briefcase} label="Working Days" />
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: "7px",
+            }}>
+              <IconCard
+                iconContent={
+                  <span style={{ fontFamily: MONO, fontSize: "12px",
+                    fontWeight: "700", color: "rgba(70,200,110,0.85)" }}>
+                    - 
+                  </span>
+                }
+                label="Day Count"
+                dim
+              />
+              <IconCard
+                iconContent={<CalendarMinus size={17} />}
+                label="No Weekends"
+                onClick={() => go("excludeWeekends")}
+                hasTryIt
+              />
+              <IconCard
+                iconContent={<CalendarPlus size={17} />}
+                label="Custom Days"
+                onClick={() => go("customWorkingDays")}
+                hasTryIt
+              />
+              <IconCard
+                iconContent={<Palette size={17} />}
+                label="Color Guide"
+                onClick={() => go("colorSystem")}
+                hasTryIt
+              />
+            </div>
 
-        <Row
-          icon={MousePointerClick}
-          label="Pick a Date Range"
-          desc="Click any date on the calendar to set the Start date, then click another to set the End date. The range and working days appear instantly."
-        />
+            {/* ── CATEGORY 3: Saved Ranges & Tasks ── */}
+            <SectionHeader icon={Bookmark} label="Saved Ranges & Tasks" />
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: "7px",
+            }}>
+              <IconCard
+                iconContent={<Lock size={17} />}
+                label="Lock & Switch"
+                onClick={() => go("lockSwitch")}
+                hasTryIt
+              />
+              <IconCard
+                iconContent={<Timer size={17} />}
+                label="Save Range"
+                onClick={() => go("saveRange")}
+                hasTryIt
+              />
+              <IconCard
+                iconContent={<ClipboardList size={17} />}
+                label="To-Do Tasks"
+                onClick={() => go("todoTasks")}
+                hasTryIt
+              />
+            </div>
 
-        <Row
-          icon={() => (
-            <span style={{ fontFamily: MONO, fontSize: "13px", color: GOLD }}>6/7</span>
-          )}
-          label="Manual Date Entry"
-          desc={
-            <>
-              Type directly into the <IconChip>Start</IconChip> or{" "}
-              <IconChip>End</IconChip> input fields (format: MM/DD) to set the range without clicking the calendar.
-            </>
-          }
-        />
+            {/* ── Color legend ── */}
+            <div style={{
+              marginTop: "20px",
+              background: "rgba(255,255,255,0.025)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: "12px",
+              padding: "12px 14px",
+            }}>
+              <div style={{
+                fontFamily: MONO, fontSize: "9px", letterSpacing: "0.22em",
+                textTransform: "uppercase", color: "rgba(245,166,35,0.4)",
+                marginBottom: "10px",
+              }}>
+                Color Guide
+              </div>
+              <div style={{
+                display: "grid", gridTemplateColumns: "1fr 1fr",
+                gap: "6px 12px",
+              }}>
+                {[
+                  { bg: "rgba(80,140,200,0.4)",  outline: "1px solid rgba(80,140,200,0.6)",  glow: "0 0 7px rgba(80,140,200,0.45)",  label: "Working day" },
+                  { bg: "rgba(245,166,35,0.2)",  outline: "1px solid rgba(245,166,35,0.3)",  glow: "none",                           label: "Free / off day" },
+                  { bg: "rgba(200,80,80,0.35)",  outline: "1px solid rgba(200,80,80,0.55)",  glow: "0 0 7px rgba(200,80,80,0.4)",    label: "Weekend / Wasted" },
+                  { bg: "rgba(80,140,200,0.4)",  outline: "2px solid rgba(70,200,110,0.8)",  glow: "0 0 8px rgba(70,200,110,0.5)",   label: "Today – green border" },
+                ].map(({ bg, outline, glow, label }) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{
+                      width: "16px", height: "16px", borderRadius: "50%", flexShrink: 0,
+                      background: bg, outline, boxShadow: glow,
+                    }} />
+                    <span style={{
+                      fontFamily: MONO, fontSize: "10.5px",
+                      color: "rgba(232,213,183,0.65)", whiteSpace: "nowrap",
+                    }}>
+                      {label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-        <Row
-          icon={CalendarRange}
-          label="Days Mode"
-          desc={
-            <>
-              Click the <IconChip><CalendarRange size={11} /> Calendar</IconChip> icon to enter a number of days (e.g. 150). The range is automatically counted forward from today. <strong style={{ color: "#e8d5b7" }}>Long-press</strong> the same icon to view your saved date ranges.
-            </>
-          }
-        />
-
-        <Row
-          icon={() => (
-            <span style={{ fontFamily: MONO, fontSize: "11px", color: "rgba(70,200,110,0.9)" }}>
-              Days
-            </span>
-          )}
-          iconColor="rgba(70,200,110,0.9)"
-          label="Working Days"
-          desc="After setting a range, the total working days (Mon–Fri by default) are shown in the middle of the range bar."
-        />
-
-        <Row
-          icon={CalendarMinus}
-          label="Exclude Weekends"
-          desc={
-            <>
-              Click <IconChip><CalendarMinus size={11} /> Calendar−</IconChip> to mark weekends in <span style={{ color: "rgba(255,120,120,0.9)" }}>red</span> and exclude them. Working day count updates automatically.
-            </>
-          }
-        />
-
-        <Row
-          icon={CalendarPlus}
-          label="Custom Working Days"
-          desc={
-            <>
-              Click <IconChip><CalendarPlus size={11} /> Calendar+</IconChip> to enter 1–6 working days per week (e.g. 5 = Mon–Fri). Active working days show in <span style={{ color: "rgba(100,180,255,0.9)" }}>blue</span>.
-            </>
-          }
-        />
-
-        <Row
-          icon={Lock}
-          label="Lock & Switch View"
-          desc={
-            <>
-              Click the <IconChip><LockOpen size={11} /> Lock</IconChip> icon to lock your range, then freely toggle A.D / B.S to see the same range in both calendar systems.
-            </>
-          }
-        />
-
-        <Row
-          icon={() => <Timer size={17} color={GOLD} />}
-          label="Save a Range"
-          desc={
-            <>
-              <strong style={{ color: "#e8d5b7" }}>Long-press</strong> the <IconChip><Lock size={11} /> Lock</IconChip> icon to save the current range with a custom name for future reference.
-            </>
-          }
-        />
-
-        <Row
-          icon={ClipboardList}
-          label="To-Do Tasks on a Day"
-          desc={
-            <>
-              When a saved range is loaded, <strong style={{ color: "#e8d5b7" }}>long-press any date</strong> in the range to open a task list for that day. Add tasks, mark them done, and delete completed ones.
-            </>
-          }
-        />
-
-        <div
-          style={{
-            textAlign: "center",
-            marginTop: "18px",
-            fontFamily: MONO,
-            fontSize: "10px",
-            letterSpacing: "0.12em",
-            color: "rgba(232,213,183,0.2)",
-          }}
-        >
-          · click anywhere outside to close ·
-        </div>
-        </>
+            {/* footer */}
+            <div style={{
+              textAlign: "center", marginTop: "14px",
+              fontFamily: MONO, fontSize: "10px",
+              letterSpacing: "0.12em",
+              color: "rgba(232,213,183,0.18)",
+            }}>
+              · tap a card to see the demo · click outside to close ·
+            </div>
+          </>
         )}
       </div>
     </div>

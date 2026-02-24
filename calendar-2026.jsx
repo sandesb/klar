@@ -789,7 +789,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
                 fontFamily: "inherit",
               }}
             >
-              <CalendarArrowDown size={18} />
+              <CalendarArrowDown size={18} /> <span> &nbsp; </span>+1 Day
             </button>
         
           <span style={{ textAlign: "center" }}>{savedRangeTitle}</span>
@@ -815,7 +815,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
                 fontFamily: "inherit",
               }}
             >
-              <RefreshCw size={18} />
+              <RefreshCw size={18} /> <span> &nbsp; </span>Update
             </button>
           )}
         </div>
