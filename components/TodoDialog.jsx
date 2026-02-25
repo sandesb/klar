@@ -15,18 +15,18 @@ export default function TodoDialog({ open, onClose, rangeId, dateKey, dateLabel 
 
   useEffect(() => {
     if (open && rangeId && dateKey) {
-      setTasks(loadTodoTasks(rangeId, dateKey));
+      loadTodoTasks(rangeId, dateKey).then(setTasks).catch(() => setTasks([]));
       setAdding(false);
       setNewTaskText("");
     }
   }, [open, rangeId, dateKey]);
 
-  function handleSaveNew() {
+  async function handleSaveNew() {
     const text = newTaskText.trim();
     if (!text) return;
     const next = [...tasks, { id: createTaskId(), text, done: false }];
     setTasks(next);
-    saveTodoTasks(rangeId, dateKey, next);
+    await saveTodoTasks(rangeId, dateKey, next);
     setNewTaskText("");
     setAdding(false);
   }
@@ -36,20 +36,20 @@ export default function TodoDialog({ open, onClose, rangeId, dateKey, dateLabel 
     setNewTaskText("");
   }
 
-  function handleToggleDone(taskId) {
+  async function handleToggleDone(taskId) {
     const next = tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t));
     setTasks(next);
-    saveTodoTasks(rangeId, dateKey, next);
+    await saveTodoTasks(rangeId, dateKey, next);
   }
 
-  function handleDelete(task) {
+  async function handleDelete(task) {
     if (!task.done) {
       toast("Please finish the task first", { style: { fontFamily: "'DM Mono', monospace" } });
       return;
     }
     const next = tasks.filter((t) => t.id !== task.id);
     setTasks(next);
-    saveTodoTasks(rangeId, dateKey, next);
+    await saveTodoTasks(rangeId, dateKey, next);
     toast.success("Task deleted", { style: { fontFamily: "'DM Mono', monospace" } });
   }
 

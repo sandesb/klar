@@ -158,7 +158,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
   const [showPlusDialog, setShowPlusDialog] = useState(false);
   const [plusInput, setPlusInput] = useState("");
   const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [savedRanges, setSavedRanges] = useState(() => loadSavedRanges());
+  const [savedRanges, setSavedRanges] = useState([]);
   const [showSavedRangesDialog, setShowSavedRangesDialog] = useState(false);
   const [savedRangeTitle, setSavedRangeTitle] = useState(null);
   const [heartActive, setHeartActive] = useState(false);
@@ -176,6 +176,10 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
   const [showTimeAware, setShowTimeAware] = useState(false);
   const [timeAwareFrozen, setTimeAwareFrozen] = useState(false);
   const [, setTimeTick] = useState(0);
+
+  useEffect(() => {
+    loadSavedRanges().then(setSavedRanges).catch(() => setSavedRanges([]));
+  }, []);
 
   function countWeekdays(start, end) {
     let count = 0;
@@ -246,7 +250,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
     }
   }
 
-  function handleSaveRangeProceed(title) {
+  async function handleSaveRangeProceed(title) {
     if (!effectiveStart || !effectiveEnd) return;
     const entry = {
       id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
@@ -255,8 +259,8 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
       end: effectiveEnd.toISOString(),
       plusDays: customWorkingDays != null ? customWorkingDays : null,
     };
-    saveSavedRange(entry);
-    setSavedRanges(loadSavedRanges());
+    await saveSavedRange(entry);
+    setSavedRanges(await loadSavedRanges());
   }
 
   function handleLoadSavedRange(entry) {
@@ -1045,9 +1049,9 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
         onClose={() => setShowSavedRangesDialog(false)}
         ranges={savedRanges}
         onSelectRange={handleLoadSavedRange}
-        onDelete={(id) => {
-          deleteSavedRange(id);
-          setSavedRanges(loadSavedRanges());
+        onDelete={async (id) => {
+          await deleteSavedRange(id);
+          setSavedRanges(await loadSavedRanges());
         }}
       />
 

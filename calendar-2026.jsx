@@ -49,7 +49,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const [showPlusDialog, setShowPlusDialog] = useState(false);
   const [plusInput, setPlusInput] = useState("");
   const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [savedRanges, setSavedRanges] = useState(() => loadSavedRanges());
+  const [savedRanges, setSavedRanges] = useState([]);
   const [showSavedRangesDialog, setShowSavedRangesDialog] = useState(false);
   const [savedRangeTitle, setSavedRangeTitle] = useState(null);
   const [savedRangeId, setSavedRangeId] = useState(null);
@@ -73,6 +73,10 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const [showTimeAware, setShowTimeAware] = useState(false);
   const [timeAwareFrozen, setTimeAwareFrozen] = useState(false);
   const [, setTimeTick] = useState(0);
+
+  useEffect(() => {
+    loadSavedRanges().then(setSavedRanges).catch(() => setSavedRanges([]));
+  }, []);
 
   function countWeekdays(start, end) {
     let count = 0;
@@ -145,7 +149,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     }
   }
 
-  function handleSaveRangeProceed(title) {
+  async function handleSaveRangeProceed(title) {
     if (!effectiveStart || !effectiveEnd) return;
     const entry = {
       id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
@@ -154,8 +158,8 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       end: effectiveEnd.toISOString(),
       plusDays: customWorkingDays != null ? customWorkingDays : null,
     };
-    saveSavedRange(entry);
-    setSavedRanges(loadSavedRanges());
+    await saveSavedRange(entry);
+    setSavedRanges(await loadSavedRanges());
     setShowSaveDialog(false);
     setShowSavedRangesDialog(true);
   }
@@ -379,10 +383,10 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     }
   }
 
-  function handleUpdateRange() {
+  async function handleUpdateRange() {
     if (!savedRangeId) return;
-    updateSavedRange(savedRangeId, { deducted: localDeducted, added: localAdded });
-    setSavedRanges(loadSavedRanges());
+    await updateSavedRange(savedRangeId, { deducted: localDeducted, added: localAdded });
+    setSavedRanges(await loadSavedRanges());
     const title = savedRangeTitle || "saved range";
     toast.success(`Changes updated in '${title}'`, { style: { fontFamily: "'DM Mono', monospace" } });
   }
@@ -405,18 +409,18 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     }
   }
 
-  function handleExtendRangeByOneWorkingDay() {
+  async function handleExtendRangeByOneWorkingDay() {
     if (!savedRangeId || !effectiveStart || !effectiveEnd || !lockedRange) return;
     const newEnd = getNextWorkingDay(effectiveEnd);
     onLockRange({ start: effectiveStart, end: newEnd });
     setRangeEnd(newEnd);
     setEndInput(formatDate(newEnd));
-    updateSavedRange(savedRangeId, {
+    await updateSavedRange(savedRangeId, {
       end: newEnd.toISOString(),
       deducted: localDeducted,
       added: localAdded,
     });
-    setSavedRanges(loadSavedRanges());
+    setSavedRanges(await loadSavedRanges());
     const title = savedRangeTitle || "saved range";
     toast.success(`Range extended to ${formatLong(newEnd)} · 1 working day added in '${title}'`, {
       style: { fontFamily: "'DM Mono', monospace" },
@@ -1170,9 +1174,9 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
         onClose={() => setShowSavedRangesDialog(false)}
         ranges={savedRanges}
         onSelectRange={handleLoadSavedRange}
-        onDelete={(id) => {
-          deleteSavedRange(id);
-          setSavedRanges(loadSavedRanges());
+        onDelete={async (id) => {
+          await deleteSavedRange(id);
+          setSavedRanges(await loadSavedRanges());
         }}
       />
       <TodoDialog
