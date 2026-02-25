@@ -1,20 +1,6 @@
-import { jsonbinGet, jsonbinPut } from "./jsonbinClient.js";
+import { supabaseSelect, supabaseUpsert } from "./supabaseClient.js";
 
-const TODO_TASKS_BIN_ID = "699ea4c2d0ea881f40d7442d";
-
-async function getStore() {
-  try {
-    const record = await jsonbinGet(TODO_TASKS_BIN_ID);
-    if (record == null || typeof record !== "object" || Array.isArray(record)) return {};
-    return record;
-  } catch {
-    return {};
-  }
-}
-
-async function setStore(store) {
-  await jsonbinPut(TODO_TASKS_BIN_ID, store);
-}
+const TABLE = "todo";
 
 /** Key for a saved range + date: "rangeId:YYYY-MM-DD" */
 export function todoKey(rangeId, dateKey) {
@@ -26,10 +12,15 @@ export function todoKey(rangeId, dateKey) {
  * @returns Promise<Array of { id, text, done }>
  */
 export async function loadTodoTasks(rangeId, dateKey) {
-  const store = await getStore();
-  const key = todoKey(rangeId, dateKey);
-  const list = store[key];
-  return Array.isArray(list) ? list : [];
+  try {
+    const key = todoKey(rangeId, dateKey);
+    const rows = await supabaseSelect(TABLE, `id=eq.${key}`);
+    if (!rows.length) return [];
+    const data = rows[0].data;
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -39,9 +30,8 @@ export async function loadTodoTasks(rangeId, dateKey) {
  * @param {Array<{ id: string, text: string, done: boolean }>} tasks
  */
 export async function saveTodoTasks(rangeId, dateKey, tasks) {
-  const store = await getStore();
-  store[todoKey(rangeId, dateKey)] = tasks;
-  await setStore(store);
+  const key = todoKey(rangeId, dateKey);
+  await supabaseUpsert(TABLE, { id: key, data: tasks });
 }
 
 /** Generate a simple unique id for a task */
