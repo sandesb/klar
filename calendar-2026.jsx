@@ -500,7 +500,7 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       } else {
         setTimeTick(v => v + 1);
       }
-    }, 3000);
+    }, 1500);
     return () => clearInterval(id);
   }, [todayIsInRange, timeAwareFrozen, !!effectiveRange]);
 
