@@ -70,6 +70,9 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
   const daysLongPressFired = useRef(false);
   const daysLongPressJustFired = useRef(false);
   const startMonthRefAD = useRef(null);
+  const [showTimeAware, setShowTimeAware] = useState(false);
+  const [timeAwareFrozen, setTimeAwareFrozen] = useState(false);
+  const [, setTimeTick] = useState(0);
 
   function countWeekdays(start, end) {
     let count = 0;
@@ -460,6 +463,51 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     ? (isReviewMode ? heartAdjustedDays : heartEffectiveDays)
     : (isReviewMode ? adjustedWorkingDays : effectiveDays);
 
+  const todayIsInRange = !!(effectiveStart && effectiveEnd &&
+    todayMidnight >= effectiveStart && todayMidnight <= effectiveEnd);
+
+  function getTimeAwareRemaining() {
+    if (!effectiveEnd) return null;
+    const now = new Date();
+    const endOfRange = new Date(effectiveEnd.getFullYear(), effectiveEnd.getMonth(), effectiveEnd.getDate() + 1);
+    const diffMs = endOfRange.getTime() - now.getTime();
+    if (diffMs <= 0) return { days: 0, hours: 0 };
+    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+    return { days: Math.floor(totalHours / 24), hours: totalHours % 24 };
+  }
+
+  function formatTimeAware(ta) {
+    if (!ta) return "";
+    if (ta.days === 0 && ta.hours === 0) return "0 hrs";
+    if (ta.days === 0) return `${ta.hours} hrs`;
+    if (ta.hours === 0) return `${ta.days} days`;
+    return `${ta.days} days ${ta.hours} hrs`;
+  }
+
+  const timeAware = todayIsInRange ? getTimeAwareRemaining() : null;
+
+  useEffect(() => {
+    setShowTimeAware(false);
+    setTimeAwareFrozen(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveStart?.getTime(), effectiveEnd?.getTime()]);
+
+  useEffect(() => {
+    if (!todayIsInRange || !effectiveRange) return;
+    const id = setInterval(() => {
+      if (!timeAwareFrozen) {
+        setShowTimeAware(v => !v);
+      } else {
+        setTimeTick(v => v + 1);
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [todayIsInRange, timeAwareFrozen, !!effectiveRange]);
+
+  function handleDaysLabelClick() {
+    setTimeAwareFrozen(f => !f);
+  }
+
   return (
     <div
       className="calendar-page"
@@ -727,13 +775,25 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
               />
               {formatLong(heartStart)} → {formatLong(effectiveEnd)}
               <span style={{ color: "rgba(245,166,35,0.4)" }}>·</span>
-              <span style={{ color: "rgba(232,213,183,0.55)" }}>
+              <span
+                onClick={todayIsInRange ? handleDaysLabelClick : undefined}
+                title={todayIsInRange ? (timeAwareFrozen ? "Click to resume switching" : "Click to freeze") : undefined}
+                style={{
+                  color: "rgba(232,213,183,0.55)",
+                  cursor: todayIsInRange ? "pointer" : "default",
+                  userSelect: "none",
+                }}
+              >
                 <span
-                  key={displayWorkingDays}
-                  className="count-tick"
-                  style={{ display: "inline-block", minWidth: "18px", textAlign: "right" }}
-                >{displayWorkingDays}</span>
-                {" "}{excludeWeekends || customWorkingDays != null ? "working days" : "days"}{heartActive ? " left" : ""}
+                  key={showTimeAware && timeAware ? "ta" : "cd"}
+                  className={todayIsInRange ? "days-label-anim" : ""}
+                  style={{ display: "inline-block" }}
+                >
+                  {showTimeAware && timeAware
+                    ? <>{formatTimeAware(timeAware)}{heartActive ? " left" : ""}</>
+                    : <><span className="count-tick" style={{ display: "inline-block", minWidth: "18px", textAlign: "right" }}>{displayWorkingDays}</span>{" "}{excludeWeekends || customWorkingDays != null ? "working days" : "days"}{heartActive ? " left" : ""}</>
+                  }
+                </span>
               </span>
               <button
                 type="button"
@@ -1120,6 +1180,11 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
           .brand-title { font-size: clamp(56px, 18vw, 80px) !important; }
         }
         @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:.9} }
+        @keyframes daysLabelFade {
+          0% { opacity: 0; transform: translateY(4px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .days-label-anim { animation: daysLabelFade 0.4s ease; }
         @keyframes klary-bulb-pulse {
           0%,100% { filter: drop-shadow(0 0 4px rgba(245,165,35,0.38))
                             drop-shadow(0 0 10px rgba(245,165,35,0.14)); }
