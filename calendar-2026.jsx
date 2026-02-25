@@ -196,7 +196,12 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     const d = parseMMDD(v, YEAR);
     if (d) {
       setRangeEnd(d);
-      toast.success(`End: ${formatLong(d)}`, { style: { fontFamily: "'DM Mono', monospace" } });
+      if (rangeStart) {
+        const s = rangeStart < d ? rangeStart : d;
+        const e = rangeStart < d ? d : rangeStart;
+        onLockRange({ start: s, end: e });
+        toast.success("You can switch now", { style: { fontFamily: "'DM Mono', monospace" } });
+      }
     } else if (!v) setRangeEnd(null);
     if (d) setSelecting(false);
   }
@@ -214,7 +219,10 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       setRangeEnd(date);
       setEndInput(formatDate(date));
       setSelecting(false);
-      toast.success(`End: ${formatLong(date)}`, { style: { fontFamily: "'DM Mono', monospace" } });
+      const s = rangeStart < date ? rangeStart : date;
+      const e = rangeStart < date ? date : rangeStart;
+      onLockRange({ start: s, end: e });
+      toast.success("You can switch now", { style: { fontFamily: "'DM Mono', monospace" } });
     }
   }
 
@@ -250,7 +258,8 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
     setSelecting(false);
     setShowDaysInput(false);
     setDaysInput("");
-    toast.success(`${formatLong(today)} → ${formatLong(endDate)} (${n} days)`, { style: { fontFamily: "'DM Mono', monospace" } });
+    onLockRange({ start: today, end: endDate });
+    toast.success("You can switch now", { style: { fontFamily: "'DM Mono', monospace" } });
   }
 
   const hasRange = rangeStart && rangeEnd;

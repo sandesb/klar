@@ -293,8 +293,12 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
     const d = parseBSMMDD(v, bsYearData);
     if (d) {
       setRangeEnd(d);
-      const label = formatLongBS(d) || formatLong(d);
-      toast.success(`End: ${label}`, { style: { fontFamily: "'DM Mono', monospace" } });
+      if (rangeStart) {
+        const s = rangeStart < d ? rangeStart : d;
+        const e = rangeStart < d ? d : rangeStart;
+        onLockRange({ start: s, end: e });
+        toast.success("You can switch now", { style: { fontFamily: "'DM Mono', monospace" } });
+      }
     } else if (!v) setRangeEnd(null);
     if (d) setSelecting(false);
   }
@@ -313,8 +317,10 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
       setRangeEnd(date);
       setEndInput(formatDateBS(date));
       setSelecting(false);
-      const label = formatLongBS(date) || formatLong(date);
-      toast.success(`End: ${label}`, { style: { fontFamily: "'DM Mono', monospace" } });
+      const s = rangeStart < date ? rangeStart : date;
+      const e = rangeStart < date ? date : rangeStart;
+      onLockRange({ start: s, end: e });
+      toast.success("You can switch now", { style: { fontFamily: "'DM Mono', monospace" } });
     }
   }
 
@@ -346,9 +352,8 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
     setSelecting(false);
     setShowDaysInput(false);
     setDaysInput("");
-    const startLabel = formatLongBS(today) || formatLong(today);
-    const endLabel = formatLongBS(endDate) || formatLong(endDate);
-    toast.success(`${startLabel} → ${endLabel} (${n} days)`, { style: { fontFamily: "'DM Mono', monospace" } });
+    onLockRange({ start: today, end: endDate });
+    toast.success("You can switch now", { style: { fontFamily: "'DM Mono', monospace" } });
   }
 
   const hasRange = rangeStart && rangeEnd;
