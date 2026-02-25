@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "supabase": "^2.76.14",
     "vite": "^6.0.3"
   }
 }
