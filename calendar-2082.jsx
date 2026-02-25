@@ -420,10 +420,13 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
 
   function formatTimeAware(ta) {
     if (!ta) return "";
-    if (ta.days === 0 && ta.hours === 0) return "0 hrs";
-    if (ta.days === 0) return `${ta.hours} hrs`;
-    if (ta.hours === 0) return `${ta.days} days`;
-    return `${ta.days} days ${ta.hours} hrs`;
+    const d = ta.days, h = ta.hours;
+    const dayStr = d === 1 ? "1 day" : `${d} days`;
+    const hrStr = h === 1 ? "1 hr" : `${h} hrs`;
+    if (d === 0 && h === 0) return "0 hrs";
+    if (d === 0) return hrStr;
+    if (h === 0) return dayStr;
+    return `${dayStr} ${hrStr}`;
   }
 
   const timeAware = todayIsInRange ? getTimeAwareRemaining() : null;
