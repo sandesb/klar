@@ -1,11 +1,12 @@
 import "./main.css";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { Toaster } from "react-hot-toast";
-import { Instagram, Youtube, Linkedin, Github } from "lucide-react";
+import { Instagram, Youtube, Linkedin, Github, Droplets, Loader2 } from "lucide-react";
 import Calendar2026 from "./calendar-2026.jsx";
 import Calendar2082 from "./calendar-2082.jsx";
 import Help from "./components/Help.jsx";
+import Dialog from "./components/Dialog.jsx";
 
 const SOCIAL_LINKS = [
   { Icon: Instagram, href: "https://instagram.com/sandesb_" },
@@ -71,12 +72,64 @@ function App() {
   const [lockedRange, setLockedRange] = useState(null); // { start: Date, end: Date } when locked
   const [helpOpen, setHelpOpen] = useState(false);
   const [glowStopped, setGlowStopped] = useState(false);
+  const [fludOpen, setFludOpen] = useState(false);
+  const [fludIframeLoaded, setFludIframeLoaded] = useState(false);
+
+  useEffect(() => {
+    if (fludOpen) setFludIframeLoaded(false);
+  }, [fludOpen]);
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(0deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)" }}>
       <Toaster position="bottom-center" toastOptions={{ style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.25)" } }} />
       <Help open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <Dialog
+        open={fludOpen}
+        onClose={() => setFludOpen(false)}
+        title="FLÜD – Body Hydration"
+        footer={null}
+      >
+        <div style={{ position: "relative", width: "90vw", maxWidth: "900px", height: "80vh", maxHeight: "700px" }}>
+          {!fludIframeLoaded && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "12px",
+                background: "rgba(13,8,5,0.95)",
+                borderRadius: "8px",
+                color: "rgba(245,166,35,0.8)",
+                fontFamily: "'DM Mono', monospace",
+                fontSize: "12px",
+                letterSpacing: "0.1em",
+              }}
+            >
+              <Loader2 size={32} style={{ animation: "spin 0.8s linear infinite" }} />
+              <span>Loading FLÜD…</span>
+            </div>
+          )}
+          <iframe
+            src="https://flud.netlify.app"
+            title="FLÜD Body Hydration"
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "none",
+              borderRadius: "8px",
+              opacity: fludIframeLoaded ? 1 : 0,
+              transition: "opacity 0.2s ease",
+            }}
+            onLoad={() => setFludIframeLoaded(true)}
+          />
+        </div>
+      </Dialog>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", paddingTop: "16px", paddingBottom: "8px" }}>
+      
+   
         <CalendarToggle isBS={isBS} onSwitch={setIsBS} noPad />
         <button
           type="button"
@@ -98,6 +151,30 @@ function App() {
           }}
         >
           ?
+        </button>
+        <button
+          type="button"
+          onClick={() => setFludOpen(true)}
+          title="FLÜD – Body Hydration"
+          style={{
+            fontFamily: "'DM Mono', monospace",
+            fontSize: "11px",
+            letterSpacing: "0.15em",
+            color: "rgb(88, 159, 252)",
+            background: "transparent",
+            border: "1px solid rgb(88, 159, 252)",
+            borderRadius: "8px",
+            padding: "8px 12px",
+            cursor: "pointer",
+            outline: "none",
+            lineHeight: 1,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          Try flüd
+          <Droplets size={16} />
         </button>
       </div>
       {isBS ? (
@@ -171,6 +248,10 @@ function App() {
         <p>© {new Date().getFullYear()} Klary. All rights reserved.</p>
       </footer>
       <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
         @media (max-width: 768px) {
           .footer-backstory { padding-left: 24px; padding-right: 24px; }
         }

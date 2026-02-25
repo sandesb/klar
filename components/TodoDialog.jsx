@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Check, X, Circle, CircleCheck, Trash2 } from "lucide-react";
+import { Plus, Check, X, Circle, CircleCheck, Trash2, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import Dialog from "./Dialog.jsx";
 import { loadTodoTasks, saveTodoTasks, createTaskId } from "../todoTasksStorage.js";
@@ -10,14 +10,19 @@ import { loadTodoTasks, saveTodoTasks, createTaskId } from "../todoTasksStorage.
  */
 export default function TodoDialog({ open, onClose, rangeId, dateKey, dateLabel }) {
   const [tasks, setTasks] = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newTaskText, setNewTaskText] = useState("");
 
   useEffect(() => {
     if (open && rangeId && dateKey) {
-      loadTodoTasks(rangeId, dateKey).then(setTasks).catch(() => setTasks([]));
+      setTasksLoading(true);
       setAdding(false);
       setNewTaskText("");
+      loadTodoTasks(rangeId, dateKey)
+        .then(setTasks)
+        .catch(() => setTasks([]))
+        .finally(() => setTasksLoading(false));
     }
   }, [open, rangeId, dateKey]);
 
@@ -80,6 +85,25 @@ export default function TodoDialog({ open, onClose, rangeId, dateKey, dateLabel 
 
   return (
     <Dialog open={open} onClose={onClose} title={dateLabel ? `Tasks · ${dateLabel}` : "Tasks"}>
+      {tasksLoading ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "12px",
+            padding: "32px 24px",
+            color: "rgba(245,166,35,0.8)",
+            fontFamily: "'DM Mono', monospace",
+            fontSize: "12px",
+            letterSpacing: "0.1em",
+          }}
+        >
+          <Loader2 size={28} style={{ animation: "spin 0.8s linear infinite" }} />
+          <span>Loading tasks…</span>
+        </div>
+      ) : (
       <table style={tableStyle}>
         <tbody>
           {tasks.map((task) => (
@@ -183,6 +207,7 @@ export default function TodoDialog({ open, onClose, rangeId, dateKey, dateLabel 
           </tr>
         </tbody>
       </table>
+      )}
     </Dialog>
   );
 }
