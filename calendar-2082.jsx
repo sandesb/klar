@@ -536,6 +536,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
             placeholder="MM/DD"
             active={!lockedRange && selecting && !!rangeStart && !rangeEnd}
             disabled={!!lockedRange}
+            persistBorder
           />
           {(rangeStart || startInput) && (
             <button
@@ -576,7 +577,7 @@ export default function Calendar2082({ lockedRange, onLockRange }) {
             title="Set range by days (long-press to view saved)"
             style={{
               background: showDaysInput ? "rgba(245,166,35,0.15)" : "transparent",
-              border: "1px solid rgba(255,255,255,0.1)",
+              border: "1px solid rgba(245,166,35,0.45)",
               borderRadius: "10px",
               padding: "12px 13px",
               color: showDaysInput ? "#e8d5b7" : "rgba(232,213,183,0.4)",

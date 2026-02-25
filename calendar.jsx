@@ -83,7 +83,7 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
   return (
     <div style={{
       background: "rgba(255,255,255,0.03)",
-      border: "1px solid rgba(255,255,255,0.08)",
+      border: "1px solid rgba(245,166,35,0.45)",
       borderRadius: "16px",
       padding: "18px",
     }}>
@@ -242,7 +242,8 @@ export function MonthCalendar({ monthLabel, cells, rangeStart, rangeEnd, hoverDa
   );
 }
 
-export function DateInput({ label, value, onChange, placeholder, active, disabled }) {
+export function DateInput({ label, value, onChange, placeholder, active, disabled, persistBorder }) {
+  const showBorder = active || persistBorder;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: 1 }}>
       <label style={{
@@ -264,7 +265,7 @@ export function DateInput({ label, value, onChange, placeholder, active, disable
         placeholder={placeholder}
         style={{
           background: active ? "rgba(245,166,35,0.1)" : "transparent",
-          border: active ? "1px solid rgba(245,166,35,0.45)" : "none",
+          border: showBorder ? "1px solid rgba(245,166,35,0.45)" : "none",
           borderRadius: "10px",
           padding: "12px 0",
           color: "#e8d5b7",
