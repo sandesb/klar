@@ -34,6 +34,52 @@ npm run ios
 npx expo export --platform web
 ```
 
+## Build Android APK (install on your phone)
+
+This project includes `eas.json` with a `preview` profile configured to output an `.apk`.
+
+1) Install dependencies:
+
+```bash
+npm install
+```
+
+2) Login to Expo (first time only):
+
+```bash
+npx eas login
+```
+
+3) Configure EAS build metadata in this project (first time only):
+
+```bash
+npx eas build:configure
+```
+
+4) Build an Android APK in Expo cloud:
+
+```bash
+npx eas build -p android --profile preview
+```
+
+5) When build finishes, Expo prints a URL/QR code. Open it on your phone and download the APK.
+
+If Android blocks install, allow **Install unknown apps** for your browser/file manager and retry.
+
+### Optional: Local APK build (requires Android Studio toolchain)
+
+```bash
+npx expo prebuild -p android
+cd android
+./gradlew assembleRelease
+```
+
+Output APK path:
+
+```bash
+android/app/build/outputs/apk/release/app-release.apk
+```
+
 ## Create a new repository for this app
 
 From inside this folder:
