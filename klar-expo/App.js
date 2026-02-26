@@ -1,7 +1,11 @@
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
+  Animated,
+  Easing,
+  Linking,
   Modal,
   Pressable,
   SafeAreaView,
@@ -11,6 +15,36 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Toast from "react-native-toast-message";
+import Svg, { Path } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
+import { useFonts } from "expo-font";
+import {
+  PlayfairDisplay_400Regular,
+  PlayfairDisplay_700Bold,
+} from "@expo-google-fonts/playfair-display";
+import { DMMono_400Regular, DMMono_500Medium } from "@expo-google-fonts/dm-mono";
+import {
+  Bookmark,
+  CalendarClock,
+  CalendarMinus,
+  CalendarPlus,
+  CalendarRange,
+  Circle,
+  CircleCheck,
+  Github,
+  Heart,
+  Instagram,
+  Linkedin,
+  Lock,
+  LockOpen,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Wifi,
+  X,
+  Youtube,
+} from "lucide-react-native";
 
 const STORAGE_SAVED_RANGES_KEY = "@klar_expo/saved_ranges/v1";
 const STORAGE_TODO_KEY = "@klar_expo/todo_map/v1";
@@ -18,6 +52,13 @@ const STORAGE_TODO_KEY = "@klar_expo/todo_map/v1";
 const AD_DEFAULT_YEAR = 2026;
 const ONE_DAY_MS = 86400000;
 const DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const toastStyle = { fontFamily: "DMMono_400Regular" };
+function capitalize(s) {
+  if (!s || typeof s !== "string") return s;
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
 const MONTHS_AD = [
   "January",
   "February",
@@ -70,6 +111,14 @@ const BS_2083 = {
 };
 
 const BS_YEARS = [BS_2082, BS_2083];
+
+const SOCIAL_LINKS = [
+  { Icon: Instagram, href: "https://instagram.com/sandesb_", label: "Instagram" },
+  { Icon: Youtube, href: "https://www.youtube.com/@SandeshBajracharya", label: "YouTube" },
+  { Icon: Linkedin, href: "https://www.linkedin.com/in/sandesh-bajracharya-238104250/", label: "LinkedIn" },
+  { Icon: Github, href: "https://github.com/sandesb", label: "GitHub" },
+  { Icon: Wifi, href: "https://open.spotify.com/artist/6bjgnPHECLtzUfHVih7OaT?si=ju5toG1pQjyorcCYr17H7Q", label: "Spotify" },
+];
 
 function getDaysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate();
@@ -302,6 +351,135 @@ async function loadJsonStorage(key, fallbackValue) {
   }
 }
 
+const BULB_SIZE = 14; // px — the teardrop SVG rendered size
+
+function KlaryBrand({ yearTitle, yearSubLabel }) {
+  const [bulbLit, setBulbLit] = useState(true);
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!bulbLit) {
+      glowAnim.stopAnimation();
+      Animated.timing(glowAnim, { toValue: 0, duration: 400, useNativeDriver: false }).start();
+      return;
+    }
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: false }),
+        Animated.timing(glowAnim, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: false }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [bulbLit]);
+
+  const shadowRadius = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [4, 14] });
+  const shadowOpacity = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.38, 0.75] });
+
+  return (
+    <View style={brandStyles.header}>
+      {/* "Klar" + bulb + "y" on one line */}
+      <View style={brandStyles.titleRow}>
+        <Text style={brandStyles.brandText}>Klar</Text>
+        <Pressable
+          onPress={() => setBulbLit((v) => !v)}
+          style={brandStyles.bulbWrap}
+          accessibilityLabel={bulbLit ? "Turn off bulb" : "Turn on bulb"}
+        >
+          <Animated.View
+            style={[
+              brandStyles.bulbGlow,
+              bulbLit
+                ? { shadowColor: "#f5a623", shadowOffset: { width: 0, height: 0 }, shadowRadius, shadowOpacity, elevation: 6 }
+                : null,
+            ]}
+          >
+            <Svg
+              viewBox="0 0 10 15"
+              width={BULB_SIZE}
+              height={BULB_SIZE * 1.5}
+              style={{ overflow: "visible" }}
+            >
+              <Path
+                d="M5 0.5 C2.2 0.5 0.5 2.4 0.5 4.8 C0.5 7.6 2.2 10.2 5 14 C7.8 10.2 9.5 7.6 9.5 4.8 C9.5 2.4 7.8 0.5 5 0.5 Z"
+                fill={bulbLit ? "#f5a623" : "rgba(180,140,70,0.22)"}
+              />
+              {bulbLit ? (
+                <Path
+                  d="M3 2.2 Q2.2 3.5 2.6 5"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.45)"
+                  strokeWidth="0.9"
+                  strokeLinecap="round"
+                />
+              ) : null}
+            </Svg>
+          </Animated.View>
+        </Pressable>
+        <Text style={brandStyles.brandText}>y</Text>
+      </View>
+
+      <Text style={brandStyles.subBrand}>· A Calendar App By Sandy ·</Text>
+      <Text style={brandStyles.yearTitle}>{yearTitle}</Text>
+      <Text style={brandStyles.yearSubLabel}>{yearSubLabel}</Text>
+    </View>
+  );
+}
+
+const brandStyles = StyleSheet.create({
+  header: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  brandText: {
+    fontSize: 68,
+    color: "#e8d5b7",
+    marginTop:30,
+    fontFamily: "PlayfairDisplay_700Bold",
+    letterSpacing: 2,
+    lineHeight: 72,
+  },
+  bulbWrap: {
+    marginTop: 36,
+    marginHorizontal: 1,
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+  bulbGlow: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  subBrand: {
+    color: "rgba(245,166,35,0.5)",
+    fontSize: 11,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginTop: 12,
+    fontFamily: "DMMono_400Regular",
+  },
+  yearTitle: {
+    color: "#e8d5b7",
+    fontSize: 80,
+    marginTop: 8,
+    fontFamily: "PlayfairDisplay_400Regular",
+    letterSpacing: -1,
+    lineHeight: 76,
+  },
+  yearSubLabel: {
+    fontFamily: "DMMono_400Regular",
+    fontSize: 10,
+    letterSpacing: 4,
+    textTransform: "uppercase",
+    color: "rgba(245,166,35,0.5)",
+    marginTop: 6,
+    marginBottom: 4,
+  },
+});
+
 function ModalShell({ visible, title, onClose, children, footer }) {
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
@@ -310,7 +488,7 @@ function ModalShell({ visible, title, onClose, children, footer }) {
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{title}</Text>
             <Pressable onPress={onClose}>
-              <Text style={styles.modalClose}>✕</Text>
+              <X size={18} color="rgba(232,213,183,0.7)" />
             </Pressable>
           </View>
           <View style={styles.modalBody}>{children}</View>
@@ -452,13 +630,29 @@ function DateField({ label, value, onChangeText, editable, placeholder }) {
         placeholder={placeholder}
         placeholderTextColor="rgba(232,213,183,0.25)"
         keyboardType="number-pad"
-        style={[styles.dateInput, !editable ? styles.inputDisabled : null]}
+        style={[
+          styles.dateInput,
+          !editable ? styles.inputDisabled : null,
+          value ? styles.dateInputFilled : null,
+        ]}
       />
     </View>
   );
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    PlayfairDisplay_400Regular,
+    PlayfairDisplay_700Bold,
+    DMMono_400Regular,
+    DMMono_500Medium,
+  });
+
+  const scrollViewRef = useRef(null);
+  const startMonthY = useRef(null);    // y of start-month card relative to monthGrid
+  const monthGridY = useRef(0);        // y of monthGrid relative to ScrollView content
+  const [scrollTrigger, setScrollTrigger] = useState(0); // incremented to trigger scroll
+
   const [isBS, setIsBS] = useState(false);
   const [rangeStart, setRangeStart] = useState(null);
   const [rangeEnd, setRangeEnd] = useState(null);
@@ -509,9 +703,68 @@ export default function App() {
   const effectiveEnd = effectiveRange?.end ?? null;
   const hasEffectiveRange = !!(effectiveStart && effectiveEnd);
   const isReviewMode = !!(lockedRange && savedRangeId);
+
+  // Auto-scroll to the start-month card when a range is set, mode is switched, or layout is ready
+  useEffect(() => {
+    if (!effectiveStart) return;
+    if (startMonthY.current === null) return;
+    const timer = setTimeout(() => {
+      if (scrollViewRef.current && startMonthY.current !== null) {
+        const targetY = monthGridY.current + startMonthY.current - 16;
+        scrollViewRef.current.scrollTo({ y: Math.max(0, targetY), animated: true });
+      }
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [effectiveStart, isBS, scrollTrigger]);
   const today = startOfDay(new Date());
   const todayInRange = hasEffectiveRange && today >= effectiveStart && today <= effectiveEnd;
   const heartStart = heartActive && todayInRange && today > effectiveStart ? today : effectiveStart;
+
+  const [showTimeAware, setShowTimeAware] = useState(false);
+  const [timeAwareFrozen, setTimeAwareFrozen] = useState(false);
+  const [, setTimeTick] = useState(0);
+
+  function getTimeAwareRemaining() {
+    if (!effectiveEnd) return null;
+    const now = new Date();
+    const endOfRange = new Date(effectiveEnd.getFullYear(), effectiveEnd.getMonth(), effectiveEnd.getDate() + 1);
+    const diffMs = endOfRange.getTime() - now.getTime();
+    if (diffMs <= 0) return { days: 0, hours: 0 };
+    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+    return { days: Math.floor(totalHours / 24), hours: totalHours % 24 };
+  }
+
+  function formatTimeAware(ta) {
+    if (!ta) return "";
+    const d = ta.days, h = ta.hours;
+    const dayStr = d === 1 ? "1 day" : `${d} days`;
+    const hrStr = h === 1 ? "1 hr" : `${h} hrs`;
+    if (d === 0 && h === 0) return "0 hrs";
+    if (d === 0) return hrStr;
+    if (h === 0) return dayStr;
+    return `${dayStr} ${hrStr}`;
+  }
+
+  const timeAware = todayInRange ? getTimeAwareRemaining() : null;
+
+  // Reset flip state when range changes
+  useEffect(() => {
+    setShowTimeAware(false);
+    setTimeAwareFrozen(false);
+  }, [effectiveStart?.getTime(), effectiveEnd?.getTime()]);
+
+  // Flip between day count and time-aware every 1500ms; tick to refresh hours when frozen
+  useEffect(() => {
+    if (!todayInRange || !hasEffectiveRange) return;
+    const id = setInterval(() => {
+      if (!timeAwareFrozen) {
+        setShowTimeAware((v) => !v);
+      } else {
+        setTimeTick((v) => v + 1);
+      }
+    }, 1500);
+    return () => clearInterval(id);
+  }, [todayInRange, timeAwareFrozen, hasEffectiveRange]);
 
   const displayBSYear =
     getBSYearForDate(effectiveStart) ??
@@ -626,6 +879,7 @@ export default function App() {
   }
 
   function switchMode(nextIsBS) {
+    startMonthY.current = null; // reset so we re-measure after layout
     setIsBS(nextIsBS);
     const start = lockedRange?.start ?? rangeStart;
     const end = lockedRange?.end ?? rangeEnd;
@@ -648,6 +902,11 @@ export default function App() {
     setRangeStart(parsed);
     setRangeEnd(null);
     setEndInput("");
+    Toast.show({
+      type: "success",
+      text1: `Start: ${isBS ? formatLongBS(parsed) || formatLongAD(parsed) : formatLongAD(parsed)}`,
+      text1Style: toastStyle,
+    });
   }
 
   function handleEndInputChange(value) {
@@ -659,6 +918,9 @@ export default function App() {
       return;
     }
     setRangeEnd(parsed);
+    if (rangeStart) {
+      Toast.show({ type: "success", text1: "You can switch now", text1Style: toastStyle });
+    }
   }
 
   function handleDayPress(date, info) {
@@ -699,10 +961,16 @@ export default function App() {
       setRangeEnd(null);
       setStartInput(formatDateForMode(date, isBS));
       setEndInput("");
+      Toast.show({
+        type: "success",
+        text1: `Start: ${isBS ? formatLongBS(date) || formatLongAD(date) : formatLongAD(date)}`,
+        text1Style: toastStyle,
+      });
       return;
     }
     setRangeEnd(date);
     setEndInput(formatDateForMode(date, isBS));
+    Toast.show({ type: "success", text1: "You can switch now", text1Style: toastStyle });
   }
 
   function handleDayLongPress(date, info) {
@@ -724,6 +992,7 @@ export default function App() {
     setEndInput(formatDateForMode(end, isBS));
     setShowDaysInput(false);
     setDaysInput("");
+    Toast.show({ type: "success", text1: "You can switch now", text1Style: toastStyle });
   }
 
   function toggleRangeLock() {
@@ -733,10 +1002,12 @@ export default function App() {
       setSavedRangeTitle(null);
       setLocalDeducted([]);
       setLocalAdded([]);
+      Toast.show({ type: "success", text1: "Range unlocked", text1Style: toastStyle });
       return;
     }
     if (!hasEffectiveRange) return;
     setLockedRange({ start: new Date(effectiveStart), end: new Date(effectiveEnd) });
+    Toast.show({ type: "success", text1: "Range locked", text1Style: toastStyle });
   }
 
   function openSaveRange() {
@@ -769,6 +1040,7 @@ export default function App() {
     setSavedRangeTitle(title);
     setLockedRange({ start: new Date(effectiveStart), end: new Date(effectiveEnd) });
     setShowSaveRangeModal(false);
+    Toast.show({ type: "success", text1: `${capitalize(title)} is saved`, text1Style: toastStyle });
   }
 
   async function updateSavedRange() {
@@ -787,6 +1059,11 @@ export default function App() {
         : entry
     );
     await persistSavedRanges(nextRanges);
+    Toast.show({
+      type: "success",
+      text1: `Changes updated in '${savedRangeTitle || "saved range"}'`,
+      text1Style: toastStyle,
+    });
   }
 
   async function loadSavedRange(entry) {
@@ -835,6 +1112,11 @@ export default function App() {
         : entry
     );
     await persistSavedRanges(nextRanges);
+    Toast.show({
+      type: "success",
+      text1: `Range extended to ${isBS ? formatLongBS(newEnd) || formatLongAD(newEnd) : formatLongAD(newEnd)} · 1 working day added in '${savedRangeTitle}'`,
+      text1Style: toastStyle,
+    });
   }
 
   function openCustomWorkingDays() {
@@ -845,9 +1127,15 @@ export default function App() {
   function applyCustomWorkingDays() {
     const value = Number(workingDaysInput);
     if (!Number.isInteger(value) || value < 1 || value > 7) return;
+    const n = value;
     setCustomWorkingDays(value);
     setExcludeWeekends(false);
     setShowWorkingDaysModal(false);
+    Toast.show({
+      type: "success",
+      text1: `Working days applied: first ${n} days (Sun–${DAY_NAMES[n - 1]})`,
+      text1Style: toastStyle,
+    });
   }
 
   const todoStorageKey = savedRangeId && todoDialogDate ? `${savedRangeId}:${toDateKey(todoDialogDate)}` : null;
@@ -875,326 +1163,440 @@ export default function App() {
   async function deleteTodoTask(taskId) {
     if (!todoStorageKey) return;
     const task = todoTasks.find((t) => t.id === taskId);
-    if (!task || !task.done) return;
+    if (!task) return;
+    if (!task.done) {
+      Toast.show({ type: "info", text1: "Please finish the task first", text1Style: toastStyle });
+      return;
+    }
     const nextTasks = todoTasks.filter((t) => t.id !== taskId);
     const nextMap = { ...todoMap, [todoStorageKey]: nextTasks };
     await persistTodoMap(nextMap);
+    Toast.show({ type: "success", text1: "Task deleted", text1Style: toastStyle });
   }
 
+  if (!fontsLoaded) return null;
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.page}>
-        <View style={styles.header}>
-          <Text style={styles.brand}>Klar Native</Text>
-          <Text style={styles.subBrand}>Expo + React Native rewrite</Text>
-          <Text style={styles.yearTitle}>{yearTitle}</Text>
-        </View>
+    <>
+    <LinearGradient
+      colors={["#0a0d1a", "#1a0e00", "#0d0805"]}
+      locations={[0, 1, 1]}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={styles.safe}>
+        <StatusBar style="light" />
+        <ScrollView ref={scrollViewRef} contentContainerStyle={styles.page}>
+          <KlaryBrand yearTitle={yearTitle} yearSubLabel="Year at a Glance" />
 
-        <View style={styles.modeRow}>
-          <Pressable
-            style={[styles.modeButton, !isBS ? styles.modeButtonActive : null]}
-            onPress={() => switchMode(false)}
-          >
-            <Text style={[styles.modeButtonText, !isBS ? styles.modeButtonTextActive : null]}>A.D</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.modeButton, isBS ? styles.modeButtonActive : null]}
-            onPress={() => switchMode(true)}
-          >
-            <Text style={[styles.modeButtonText, isBS ? styles.modeButtonTextActive : null]}>B.S</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.inputsWrap}>
-          <DateField
-            label="Start"
-            value={startInput}
-            onChangeText={handleStartInputChange}
-            editable={!lockedRange}
-            placeholder="MM/DD"
-          />
-          <Text style={styles.arrow}>→</Text>
-          <DateField
-            label="End"
-            value={endInput}
-            onChangeText={handleEndInputChange}
-            editable={!lockedRange}
-            placeholder="MM/DD"
-          />
-          <Pressable style={styles.iconButton} onPress={clearSelection}>
-            <Text style={styles.iconButtonText}>✕</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.quickActions}>
-          <Pressable
-            style={[styles.actionChip, showDaysInput ? styles.actionChipActive : null]}
-            onPress={() => setShowDaysInput((prev) => !prev)}
-          >
-            <Text style={styles.actionChipText}>Days mode</Text>
-          </Pressable>
-          <Pressable style={styles.actionChip} onPress={() => setShowSavedRangesModal(true)}>
-            <Text style={styles.actionChipText}>Saved</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.actionChip, excludeWeekends ? styles.actionChipActive : null]}
-            onPress={() => {
-              const next = !excludeWeekends;
-              setExcludeWeekends(next);
-              if (next) setCustomWorkingDays(null);
-            }}
-          >
-            <Text style={styles.actionChipText}>No weekends</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.actionChip, customWorkingDays != null ? styles.actionChipBlue : null]}
-            onPress={openCustomWorkingDays}
-          >
-            <Text style={styles.actionChipText}>
-              {customWorkingDays != null ? `Custom: ${customWorkingDays}` : "Custom days"}
-            </Text>
-          </Pressable>
-        </View>
-
-        {showDaysInput ? (
-          <View style={styles.daysModeRow}>
-            <TextInput
-              style={styles.daysInput}
-              keyboardType="number-pad"
-              value={daysInput}
-              onChangeText={(text) => setDaysInput(text.replace(/\D/g, "").slice(0, 3))}
-              placeholder="Set range by N days"
-              placeholderTextColor="rgba(232,213,183,0.25)"
-            />
-            <Pressable style={styles.inlineButton} onPress={applyDaysMode}>
-              <Text style={styles.inlineButtonText}>Apply</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        <View style={styles.summaryBar}>
-          {hasEffectiveRange ? (
-            <>
-              <Text style={styles.summaryLabel}>{rangeLabel}</Text>
-              <View style={styles.summaryDivider} />
-              <Pressable onPress={() => setHeartActive((prev) => !prev)}>
-                <Text style={styles.summaryValue}>
-                  {displayCount} {excludeWeekends || customWorkingDays != null ? "working days" : "days"}
-                  {heartActive ? " left" : ""}
-                </Text>
-              </Pressable>
-            </>
-          ) : (
-            <Text style={styles.emptyHint}>Tap a day or enter MM/DD to set a range.</Text>
-          )}
-        </View>
-
-        <View style={styles.controlRow}>
-          <Pressable style={[styles.actionChip, lockedRange ? styles.actionChipActive : null]} onPress={toggleRangeLock}>
-            <Text style={styles.actionChipText}>{lockedRange ? "Unlock" : "Lock"}</Text>
-          </Pressable>
-          <Pressable style={styles.actionChip} onPress={openSaveRange}>
-            <Text style={styles.actionChipText}>Save range</Text>
-          </Pressable>
-          {savedRangeId ? (
-            <>
-              <Pressable style={styles.actionChip} onPress={updateSavedRange}>
-                <Text style={styles.actionChipText}>Update saved</Text>
-              </Pressable>
-              <Pressable style={styles.actionChip} onPress={extendByOneWorkday}>
-                <Text style={styles.actionChipText}>+1 workday</Text>
-              </Pressable>
-            </>
-          ) : null}
-        </View>
-
-        {savedRangeTitle ? (
-          <Text style={styles.savedTitle} numberOfLines={1}>
-            Saved range: {savedRangeTitle}
-          </Text>
-        ) : null}
-
-        <View style={styles.monthGrid}>
-          {monthItems.map((month) => (
-            <MonthCalendar
-              key={month.id}
-              monthLabel={month.monthLabel}
-              cells={month.cells}
-              rangeStart={heartStart}
-              rangeEnd={effectiveEnd}
-              excludeWeekends={excludeWeekends && customWorkingDays == null}
-              customWorkingDays={customWorkingDays}
-              deducted={localDeducted}
-              added={localAdded}
-              isReviewMode={isReviewMode}
-              onDayPress={handleDayPress}
-              onDayLongPress={handleDayLongPress}
-            />
-          ))}
-        </View>
-
-        <View style={styles.legend}>
-          <Text style={styles.legendText}>● Orange: range</Text>
-          <Text style={styles.legendText}>● Blue: working day</Text>
-          <Text style={styles.legendText}>● Red: excluded/weekend</Text>
-          <Text style={styles.legendText}>● Green: today</Text>
-        </View>
-        {isReviewMode ? (
-          <Text style={styles.reviewHint}>Review mode: tap days to toggle + long-press a day for tasks.</Text>
-        ) : null}
-      </ScrollView>
-
-      <ModalShell
-        visible={showWorkingDaysModal}
-        title="Custom Working Days"
-        onClose={() => setShowWorkingDaysModal(false)}
-        footer={
-          <>
-            <Pressable style={styles.modalFooterButton} onPress={applyCustomWorkingDays}>
-              <Text style={styles.modalFooterButtonText}>Apply</Text>
+          <View style={styles.modeRow}>
+            <Pressable
+              style={[styles.modeButton, styles.modeButtonLeft, !isBS ? styles.modeButtonActive : null]}
+              onPress={() => switchMode(false)}
+            >
+              <Text style={[styles.modeButtonText, !isBS ? styles.modeButtonTextActive : null]}>A.D</Text>
             </Pressable>
             <Pressable
-              style={[styles.modalFooterButton, styles.modalFooterButtonMuted]}
-              onPress={() => {
-                setCustomWorkingDays(null);
-                setWorkingDaysInput("");
-                setShowWorkingDaysModal(false);
-              }}
+              style={[styles.modeButton, styles.modeButtonRight, isBS ? styles.modeButtonActive : null]}
+              onPress={() => switchMode(true)}
             >
-              <Text style={styles.modalFooterButtonText}>Reset</Text>
-            </Pressable>
-          </>
-        }
-      >
-        <Text style={styles.modalHint}>Pick first N weekdays (1-7). Saturday remains non-working.</Text>
-        <TextInput
-          style={styles.modalInput}
-          keyboardType="number-pad"
-          value={workingDaysInput}
-          onChangeText={(text) => setWorkingDaysInput(text.replace(/\D/g, "").slice(0, 1))}
-          placeholder="e.g. 5"
-          placeholderTextColor="rgba(232,213,183,0.25)"
-        />
-      </ModalShell>
-
-      <ModalShell
-        visible={showSaveRangeModal}
-        title="Save Current Range"
-        onClose={() => setShowSaveRangeModal(false)}
-        footer={
-          <Pressable style={styles.modalFooterButton} onPress={saveCurrentRange}>
-            <Text style={styles.modalFooterButtonText}>Save</Text>
-          </Pressable>
-        }
-      >
-        <Text style={styles.modalHint}>Name this range:</Text>
-        <TextInput
-          style={styles.modalInput}
-          value={saveRangeTitle}
-          onChangeText={setSaveRangeTitle}
-          placeholder="Focus Sprint / Quarter Goal"
-          placeholderTextColor="rgba(232,213,183,0.25)"
-        />
-      </ModalShell>
-
-      <ModalShell visible={showSavedRangesModal} title="Saved Ranges" onClose={() => setShowSavedRangesModal(false)}>
-        {savedRanges.length ? (
-          savedRanges.map((entry) => {
-            const start = new Date(entry.start);
-            const end = new Date(entry.end);
-            return (
-              <View key={entry.id} style={styles.savedRow}>
-                <View style={styles.savedInfo}>
-                  <Text style={styles.savedRowTitle} numberOfLines={1}>
-                    {entry.title}
-                  </Text>
-                  <Text style={styles.savedRowSub}>
-                    {(entry.calendarMode === "BS" ? formatDateBS(start) || formatDate(start) : formatDate(start))} →{" "}
-                    {(entry.calendarMode === "BS" ? formatDateBS(end) || formatDate(end) : formatDate(end))}
-                  </Text>
-                </View>
-                <Pressable style={styles.savedAction} onPress={() => loadSavedRange(entry)}>
-                  <Text style={styles.savedActionText}>Load</Text>
-                </Pressable>
-                <Pressable style={[styles.savedAction, styles.savedActionDanger]} onPress={() => removeSavedRange(entry.id)}>
-                  <Text style={styles.savedActionText}>Del</Text>
-                </Pressable>
-              </View>
-            );
-          })
-        ) : (
-          <Text style={styles.emptyHint}>No saved ranges yet.</Text>
-        )}
-      </ModalShell>
-
-      <ModalShell
-        visible={todoDialogOpen}
-        title={todoDialogDate ? `Tasks · ${isBS ? formatLongBS(todoDialogDate) || formatLongAD(todoDialogDate) : formatLongAD(todoDialogDate)}` : "Tasks"}
-        onClose={() => setTodoDialogOpen(false)}
-      >
-        {todoTasks.map((task) => (
-          <View key={task.id} style={styles.taskRow}>
-            <Pressable onPress={() => toggleTodoTask(task.id)} style={styles.taskToggle}>
-              <Text style={styles.taskToggleText}>{task.done ? "✓" : "○"}</Text>
-            </Pressable>
-            <Text style={[styles.taskText, task.done ? styles.taskTextDone : null]} numberOfLines={2}>
-              {task.text}
-            </Text>
-            <Pressable onPress={() => deleteTodoTask(task.id)} style={styles.taskDelete}>
-              <Text style={styles.taskDeleteText}>Del</Text>
+              <Text style={[styles.modeButtonText, isBS ? styles.modeButtonTextActive : null]}>B.S</Text>
             </Pressable>
           </View>
-        ))}
-        <View style={styles.newTaskRow}>
+
+          <View style={styles.inputsWrap}>
+            <DateField
+              label="Start"
+              value={startInput}
+              onChangeText={handleStartInputChange}
+              editable={!lockedRange}
+              placeholder="MM/DD"
+            />
+            <Text style={styles.arrow}>→</Text>
+            <DateField
+              label="End"
+              value={endInput}
+              onChangeText={handleEndInputChange}
+              editable={!lockedRange}
+              placeholder="MM/DD"
+            />
+            {(rangeStart || rangeEnd) ? (
+              <Pressable style={styles.iconButton} onPress={clearSelection}>
+                <X size={16} color="rgba(232,213,183,0.65)" />
+              </Pressable>
+            ) : null}
+            <Pressable
+              style={[styles.iconButton, styles.iconButtonMl, showDaysInput ? styles.iconButtonActive : null]}
+              onPress={() => setShowDaysInput((prev) => !prev)}
+              title="Set range by days"
+            >
+              <CalendarRange size={16} color={showDaysInput ? "#e8d5b7" : "rgba(232,213,183,0.4)"} />
+            </Pressable>
+            <Pressable
+              style={[styles.iconButton, styles.iconButtonMl]}
+              onPress={() => setShowSavedRangesModal(true)}
+              title="Saved ranges"
+            >
+              <Bookmark size={16} color="rgba(232,213,183,0.4)" />
+            </Pressable>
+          </View>
+
+          {showDaysInput ? (
+            <View style={styles.daysModeRow}>
+              <View style={styles.dateField}>
+                <Text style={styles.dateLabel}>Days</Text>
+                <TextInput
+                  style={styles.daysInput}
+                  keyboardType="number-pad"
+                  value={daysInput}
+                  onChangeText={(text) => setDaysInput(text.replace(/\D/g, "").slice(0, 3))}
+                  onSubmitEditing={applyDaysMode}
+                  returnKeyType="done"
+                  placeholder="50"
+                  placeholderTextColor="rgba(232,213,183,0.25)"
+                />
+              </View>
+            </View>
+          ) : null}
+
+          <View style={[styles.summaryBar, !hasEffectiveRange ? styles.summaryBarEmpty : null]}>
+            {hasEffectiveRange ? (
+              <>
+                <Text style={styles.summaryLabel}>{rangeLabel}</Text>
+                <View style={styles.summaryDivider} />
+                <View style={styles.summaryBottomRow}>
+                  <Pressable
+                    onPress={todayInRange
+                      ? () => setTimeAwareFrozen((f) => !f)
+                      : () => setHeartActive((prev) => !prev)}
+                  >
+                    <Text style={styles.summaryValue}>
+                      {showTimeAware && timeAware
+                        ? `${formatTimeAware(timeAware)}${heartActive ? " left" : ""}`
+                        : `${displayCount} ${excludeWeekends || customWorkingDays != null ? "working days" : "days"}${heartActive ? " left" : ""}`
+                      }
+                    </Text>
+                  </Pressable>
+                  <View style={styles.summaryIcons}>
+                    <Pressable
+                      style={styles.summaryIconBtn}
+                      onPress={() => {
+                        const next = !excludeWeekends;
+                        setExcludeWeekends(next);
+                        if (next) setCustomWorkingDays(null);
+                        Toast.show({
+                          type: "success",
+                          text1: next ? "Exclude weekends applied" : "Exclude weekends removed",
+                          text1Style: toastStyle,
+                        });
+                      }}
+                      title="Exclude weekends"
+                    >
+                      <CalendarMinus size={16} color={excludeWeekends ? "#f5a623" : "rgba(232,213,183,0.5)"} />
+                    </Pressable>
+                    <Pressable
+                      style={styles.summaryIconBtn}
+                      onPress={openCustomWorkingDays}
+                      title="Custom working days"
+                    >
+                      <CalendarPlus size={16} color={customWorkingDays != null ? "#6ba3e8" : "rgba(232,213,183,0.5)"} />
+                    </Pressable>
+                    <Pressable
+                      style={styles.summaryIconBtn}
+                      onPress={() => setHeartActive((prev) => !prev)}
+                      title="Remaining days from today"
+                    >
+                      <Heart size={16} color={heartActive ? "rgba(220,80,120,0.9)" : "rgba(232,213,183,0.5)"} />
+                    </Pressable>
+                    <Pressable
+                      style={styles.summaryIconBtn}
+                      onPress={toggleRangeLock}
+                      title={lockedRange ? "Unlock range" : "Lock range"}
+                    >
+                      {lockedRange
+                        ? <LockOpen size={16} color="#f5a623" />
+                        : <Lock size={16} color="rgba(232,213,183,0.5)" />}
+                    </Pressable>
+                    <Pressable
+                      style={styles.summaryIconBtn}
+                      onPress={openSaveRange}
+                      title="Save range"
+                    >
+                      <Bookmark size={16} color={savedRangeId ? "#f5a623" : "rgba(232,213,183,0.5)"} />
+                    </Pressable>
+                    {savedRangeId ? (
+                      <>
+                        <Pressable
+                          style={styles.summaryIconBtn}
+                          onPress={updateSavedRange}
+                          title="Update saved range"
+                        >
+                          <RefreshCw size={16} color="rgba(232,213,183,0.5)" />
+                        </Pressable>
+                        <Pressable
+                          style={styles.summaryIconBtn}
+                          onPress={extendByOneWorkday}
+                          title="+1 workday"
+                        >
+                          <CalendarClock size={16} color="rgba(80,160,220,0.8)" />
+                        </Pressable>
+                      </>
+                    ) : null}
+                  </View>
+                </View>
+              </>
+            ) : (
+              <Text style={styles.emptyHint}>Tap a day or enter MM/DD to set a range.</Text>
+            )}
+          </View>
+
+          {savedRangeTitle ? (
+            <Text style={styles.savedTitle} numberOfLines={1}>
+              ● {savedRangeTitle}
+            </Text>
+          ) : null}
+
+          <View
+            style={styles.monthGrid}
+            onLayout={(e) => { monthGridY.current = e.nativeEvent.layout.y; }}
+          >
+            {monthItems.map((month) => {
+              const isStartMonth = effectiveStart
+                ? month.cells.some((c) => c && sameDay(startOfDay(c.date), startOfDay(effectiveStart)))
+                : false;
+              return (
+                <View
+                  key={month.id}
+                  style={styles.monthCardOuter}
+                  onLayout={isStartMonth
+                    ? (e) => {
+                        startMonthY.current = e.nativeEvent.layout.y;
+                        setScrollTrigger((n) => n + 1);
+                      }
+                    : undefined}
+                >
+                  <MonthCalendar
+                    monthLabel={month.monthLabel}
+                    cells={month.cells}
+                    rangeStart={heartStart}
+                    rangeEnd={effectiveEnd}
+                    excludeWeekends={excludeWeekends && customWorkingDays == null}
+                    customWorkingDays={customWorkingDays}
+                    deducted={localDeducted}
+                    added={localAdded}
+                    isReviewMode={isReviewMode}
+                    onDayPress={handleDayPress}
+                    onDayLongPress={handleDayLongPress}
+                  />
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.legend}>
+            <View style={styles.legendRow}>
+              <View style={[styles.legendDot, { backgroundColor: "#f5a623" }]} />
+              <Text style={styles.legendText}>Start / End</Text>
+            </View>
+            <View style={styles.legendRow}>
+              <View style={[styles.legendSquare, { backgroundColor: "rgba(245,166,35,0.2)" }]} />
+              <Text style={styles.legendText}>In Range</Text>
+            </View>
+            <View style={styles.legendRow}>
+              <View style={[styles.legendDot, { backgroundColor: "rgba(80,140,200,0.6)" }]} />
+              <Text style={styles.legendText}>Working day</Text>
+            </View>
+            <View style={styles.legendRow}>
+              <View style={[styles.legendDot, { backgroundColor: "rgba(200,80,80,0.55)" }]} />
+              <Text style={styles.legendText}>Excluded / weekend</Text>
+            </View>
+            <View style={styles.legendRow}>
+              <View style={[styles.legendDot, styles.legendDotGlow, { backgroundColor: "rgba(70,200,110,0.75)" }]} />
+              <Text style={styles.legendText}>Today</Text>
+            </View>
+          </View>
+          {isReviewMode ? (
+            <Text style={styles.reviewHint}>Review mode: tap days to toggle + long-press a day for tasks.</Text>
+          ) : null}
+
+          <View style={styles.footerDivider} />
+          <View style={styles.footerWrap}>
+            <Text style={styles.footerBackstory}>
+              {"· Little backstory as of Klar'y,\n\n· I love to visualize stuff. Numbers of days, weeks, months just pass by, and we call it a year. To track real progress, you have to be able to see how little time we have left here. Yet counting days feel like eternity. I felt this deep beneath my body whilst my time in Vipassana meditation, where each day felt like a year. 10 days = 10 years. But the hours I spent there, were very productive. So simple yet so difficult to just sit and let time pass on. What if we could make these days count and visually represent them? So here we are.\n\n· 'KLAR' means 'Clear' in German. I found clarity in my Vipassana experience. Hope Klary will help you in your journey too. Peace."}
+            </Text>
+            <Text style={styles.footerLabel}>Follow Me: @sandesb_</Text>
+            <View style={styles.footerSocialRow}>
+              {SOCIAL_LINKS.map(({ Icon, href, label }) => (
+                <Pressable
+                  key={href}
+                  style={styles.footerSocialLink}
+                  onPress={() => Linking.openURL(href)}
+                >
+                  <Icon size={18} color="rgba(232,213,183,0.5)" />
+                  <Text style={styles.footerSocialText}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.footerCopy}>© {new Date().getFullYear()} Klary. All rights reserved.</Text>
+          </View>
+        </ScrollView>
+
+        <ModalShell
+          visible={showWorkingDaysModal}
+          title="Custom Working Days"
+          onClose={() => setShowWorkingDaysModal(false)}
+          footer={
+            <>
+              <Pressable style={styles.modalFooterButton} onPress={applyCustomWorkingDays}>
+                <Text style={styles.modalFooterButtonText}>Apply</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalFooterButton, styles.modalFooterButtonMuted]}
+                onPress={() => {
+                  setCustomWorkingDays(null);
+                  setWorkingDaysInput("");
+                  setShowWorkingDaysModal(false);
+                  Toast.show({ type: "success", text1: "Custom working days removed", text1Style: toastStyle });
+                }}
+              >
+                <Text style={styles.modalFooterButtonText}>Reset</Text>
+              </Pressable>
+            </>
+          }
+        >
+          <Text style={styles.modalHint}>Pick first N weekdays (1-7). Saturday remains non-working.</Text>
           <TextInput
-            style={[styles.modalInput, styles.newTaskInput]}
-            value={newTaskText}
-            onChangeText={setNewTaskText}
-            placeholder="New task..."
+            style={styles.modalInput}
+            keyboardType="number-pad"
+            value={workingDaysInput}
+            onChangeText={(text) => setWorkingDaysInput(text.replace(/\D/g, "").slice(0, 1))}
+            placeholder="e.g. 5"
             placeholderTextColor="rgba(232,213,183,0.25)"
           />
-          <Pressable style={styles.inlineButton} onPress={addTodoTask}>
-            <Text style={styles.inlineButtonText}>Add</Text>
-          </Pressable>
-        </View>
-      </ModalShell>
-    </SafeAreaView>
+        </ModalShell>
+
+        <ModalShell
+          visible={showSaveRangeModal}
+          title="Save Current Range"
+          onClose={() => setShowSaveRangeModal(false)}
+          footer={
+            <Pressable style={styles.modalFooterButton} onPress={saveCurrentRange}>
+              <Text style={styles.modalFooterButtonText}>Save</Text>
+            </Pressable>
+          }
+        >
+          <Text style={styles.modalHint}>Name this range:</Text>
+          <TextInput
+            style={styles.modalInput}
+            value={saveRangeTitle}
+            onChangeText={setSaveRangeTitle}
+            placeholder="Focus Sprint / Quarter Goal"
+            placeholderTextColor="rgba(232,213,183,0.25)"
+          />
+        </ModalShell>
+
+        <ModalShell visible={showSavedRangesModal} title="Saved Ranges" onClose={() => setShowSavedRangesModal(false)}>
+          {savedRanges.length ? (
+            savedRanges.map((entry) => {
+              const start = new Date(entry.start);
+              const end = new Date(entry.end);
+              return (
+                <View key={entry.id} style={styles.savedRow}>
+                  <Pressable style={styles.savedInfo} onPress={() => loadSavedRange(entry)}>
+                    <Text style={styles.savedRowTitle} numberOfLines={1}>
+                      {entry.title}
+                    </Text>
+                    <Text style={styles.savedRowSub}>
+                      {(entry.calendarMode === "BS" ? formatDateBS(start) || formatDate(start) : formatDate(start))} →{" "}
+                      {(entry.calendarMode === "BS" ? formatDateBS(end) || formatDate(end) : formatDate(end))}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                      style={[styles.savedAction, styles.savedActionDanger]}
+                      onPress={() => {
+                        Alert.alert(
+                          `Delete "${entry.title}"?`,
+                          "This cannot be undone.",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Delete",
+                              style: "destructive",
+                              onPress: () => {
+                                const title = entry.title;
+                                removeSavedRange(entry.id);
+                                Toast.show({
+                                  type: "success",
+                                  text1: `'${capitalize(title)}' deleted successfully`,
+                                  text1Style: toastStyle,
+                                });
+                              },
+                            },
+                          ]
+                        );
+                      }}
+                    >
+                    <Trash2 size={14} color="rgba(200,80,80,0.9)" />
+                  </Pressable>
+                </View>
+              );
+            })
+          ) : (
+            <Text style={styles.emptyHint}>No saved ranges yet.</Text>
+          )}
+        </ModalShell>
+
+        <ModalShell
+          visible={todoDialogOpen}
+          title={todoDialogDate ? `Tasks · ${isBS ? formatLongBS(todoDialogDate) || formatLongAD(todoDialogDate) : formatLongAD(todoDialogDate)}` : "Tasks"}
+          onClose={() => setTodoDialogOpen(false)}
+        >
+          {todoTasks.map((task) => (
+            <View key={task.id} style={styles.taskRow}>
+              <Pressable onPress={() => toggleTodoTask(task.id)} style={styles.taskToggle}>
+                {task.done
+                  ? <CircleCheck size={18} color="rgba(70,200,110,0.9)" />
+                  : <Circle size={18} color="rgba(232,213,183,0.7)" />}
+              </Pressable>
+              <Text style={[styles.taskText, task.done ? styles.taskTextDone : null]} numberOfLines={2}>
+                {task.text}
+              </Text>
+              <Pressable onPress={() => deleteTodoTask(task.id)} style={styles.taskDelete}>
+                <Trash2 size={16} color="rgba(200,80,80,0.9)" />
+              </Pressable>
+            </View>
+          ))}
+          <View style={styles.newTaskRow}>
+            <TextInput
+              style={[styles.modalInput, styles.newTaskInput]}
+              value={newTaskText}
+              onChangeText={setNewTaskText}
+              placeholder="New task..."
+              placeholderTextColor="rgba(232,213,183,0.25)"
+            />
+            <Pressable style={styles.inlineButton} onPress={addTodoTask}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Plus size={14} color="#e8d5b7" />
+                <Text style={styles.inlineButtonText}>Add</Text>
+              </View>
+            </Pressable>
+          </View>
+        </ModalShell>
+      </SafeAreaView>
+    </LinearGradient>
+    <Toast />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#0d0805",
+    backgroundColor: "transparent",
   },
   page: {
     paddingHorizontal: 16,
     paddingBottom: 44,
     paddingTop: 10,
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  brand: {
-    fontSize: 44,
-    color: "#e8d5b7",
-    fontWeight: "700",
-    letterSpacing: 1,
-  },
-  subBrand: {
-    color: "rgba(245,166,35,0.62)",
-    fontSize: 11,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    marginTop: 3,
-  },
-  yearTitle: {
-    color: "#e8d5b7",
-    fontSize: 30,
-    marginTop: 6,
-    fontWeight: "600",
   },
   modeRow: {
     flexDirection: "row",
@@ -1208,14 +1610,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     backgroundColor: "transparent",
   },
+  modeButtonLeft: {
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 8,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
+    borderRightWidth: 0,
+  },
+  modeButtonRight: {
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+  },
   modeButtonActive: {
     backgroundColor: "rgba(245,166,35,0.2)",
     borderColor: "rgba(245,166,35,0.8)",
   },
   modeButtonText: {
-    color: "rgba(245,166,35,0.72)",
+    color: "rgba(245,166,35,0.7)",
     fontWeight: "600",
     letterSpacing: 1.5,
+    fontFamily: "DMMono_400Regular",
   },
   modeButtonTextActive: {
     color: "#e8d5b7",
@@ -1229,85 +1645,60 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dateLabel: {
-    color: "rgba(245,166,35,0.55)",
+    color: "rgba(245,166,35,0.45)",
     textTransform: "uppercase",
     fontSize: 10,
     letterSpacing: 2,
     marginBottom: 6,
+    fontFamily: "DMMono_400Regular",
   },
   dateInput: {
-    backgroundColor: "rgba(245,166,35,0.08)",
+    backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
-    borderColor: "rgba(245,166,35,0.35)",
+    borderColor: "rgba(255,255,255,0.1)",
     borderRadius: 10,
     color: "#e8d5b7",
     fontSize: 20,
     textAlign: "center",
     paddingVertical: 10,
     paddingHorizontal: 8,
+    fontFamily: "DMMono_400Regular",
   },
   inputDisabled: {
     opacity: 0.6,
+  },
+  dateInputFilled: {
+    fontFamily: "PlayfairDisplay_400Regular",
   },
   arrow: {
     color: "rgba(245,166,35,0.65)",
     fontSize: 20,
     marginHorizontal: 8,
     marginBottom: 12,
+    fontFamily: "DMMono_400Regular",
   },
   iconButton: {
     marginLeft: 8,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    height: 48,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(245,166,35,0.22)",
+    borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-end",
   },
-  iconButtonText: {
-    color: "rgba(232,213,183,0.65)",
-    fontSize: 14,
-    fontWeight: "700",
+  iconButtonMl: {
+    marginLeft: 6,
   },
-  quickActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 8,
-  },
-  controlRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 8,
-  },
-  actionChip: {
-    borderWidth: 1,
-    borderColor: "rgba(245,166,35,0.4)",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
-    backgroundColor: "rgba(255,255,255,0.02)",
-  },
-  actionChipActive: {
-    backgroundColor: "rgba(245,166,35,0.2)",
-    borderColor: "rgba(245,166,35,0.8)",
-  },
-  actionChipBlue: {
-    backgroundColor: "rgba(80,140,200,0.25)",
-    borderColor: "rgba(80,140,200,0.7)",
-  },
-  actionChipText: {
-    color: "#e8d5b7",
-    fontSize: 12,
-    fontWeight: "600",
+  iconButtonActive: {
+    backgroundColor: "rgba(245,166,35,0.15)",
+    borderColor: "rgba(245,166,35,0.7)",
   },
   daysModeRow: {
-    flexDirection: "row",
-    alignItems: "center",
     marginBottom: 10,
   },
   daysInput: {
-    flex: 1,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "rgba(245,166,35,0.3)",
@@ -1315,7 +1706,54 @@ const styles = StyleSheet.create({
     color: "#e8d5b7",
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginRight: 8,
+    fontFamily: "DMMono_400Regular",
+    fontSize: 20,
+    textAlign: "center",
+  },
+  summaryBar: {
+    borderWidth: 1,
+    borderColor: "rgba(245,166,35,0.24)",
+    borderRadius: 14,
+    backgroundColor: "rgba(245,166,35,0.08)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  summaryBarEmpty: {
+    borderColor: "transparent",
+    backgroundColor: "transparent",
+  },
+  summaryLabel: {
+    color: "rgba(245,166,35,0.9)",
+    fontSize: 12,
+    marginBottom: 7,
+    fontFamily: "DMMono_400Regular",
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: "rgba(245,166,35,0.16)",
+    marginBottom: 7,
+  },
+  summaryBottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  summaryValue: {
+    color: "#e8d5b7",
+    fontSize: 13,
+    fontWeight: "700",
+    fontFamily: "DMMono_400Regular",
+  },
+  summaryIcons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  summaryIconBtn: {
+    padding: 6,
   },
   inlineButton: {
     backgroundColor: "rgba(245,166,35,0.2)",
@@ -1329,55 +1767,38 @@ const styles = StyleSheet.create({
     color: "#e8d5b7",
     fontWeight: "700",
     fontSize: 12,
-  },
-  summaryBar: {
-    borderWidth: 1,
-    borderColor: "rgba(245,166,35,0.24)",
-    borderRadius: 14,
-    backgroundColor: "rgba(245,166,35,0.08)",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-  },
-  summaryLabel: {
-    color: "#f5c870",
-    fontSize: 12,
-    marginBottom: 7,
-  },
-  summaryDivider: {
-    height: 1,
-    backgroundColor: "rgba(245,166,35,0.16)",
-    marginBottom: 7,
-  },
-  summaryValue: {
-    color: "#e8d5b7",
-    fontSize: 13,
-    fontWeight: "700",
+    fontFamily: "DMMono_400Regular",
   },
   emptyHint: {
     color: "rgba(232,213,183,0.56)",
     fontSize: 12,
+    fontFamily: "DMMono_400Regular",
+    textAlign: "center",
   },
   savedTitle: {
     color: "rgba(245,166,35,0.95)",
     fontSize: 15,
     fontWeight: "700",
     marginBottom: 10,
+    fontFamily: "DMMono_400Regular",
   },
   monthGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
   },
-  monthCard: {
+  monthCardOuter: {
     width: "48%",
     minWidth: 165,
+    marginBottom: 10,
+  },
+  monthCard: {
+    flex: 1,
     borderWidth: 1,
     borderColor: "rgba(245,166,35,0.35)",
     borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.025)",
     padding: 10,
-    marginBottom: 10,
   },
   monthTitle: {
     color: "#e8d5b7",
@@ -1386,6 +1807,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.3,
     fontSize: 11,
     marginBottom: 8,
+    fontFamily: "DMMono_400Regular",
   },
   daysHeaderRow: {
     flexDirection: "row",
@@ -1396,6 +1818,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "rgba(232,213,183,0.36)",
     fontSize: 10,
+    fontFamily: "DMMono_400Regular",
   },
   daysGrid: {
     flexDirection: "row",
@@ -1417,22 +1840,51 @@ const styles = StyleSheet.create({
   },
   dayCellText: {
     fontSize: 11,
+    fontFamily: "DMMono_400Regular",
   },
   legend: {
     marginTop: 8,
     borderTopWidth: 1,
     borderTopColor: "rgba(245,166,35,0.2)",
     paddingTop: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendDotGlow: {
+    shadowColor: "rgba(70,200,110,0.8)",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  legendSquare: {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
   },
   legendText: {
     color: "rgba(232,213,183,0.55)",
     fontSize: 11,
-    marginBottom: 4,
+    fontFamily: "DMMono_400Regular",
   },
   reviewHint: {
     color: "rgba(70,200,110,0.85)",
     marginTop: 6,
     fontSize: 11,
+    fontFamily: "DMMono_400Regular",
   },
   modalBackdrop: {
     flex: 1,
@@ -1460,10 +1912,7 @@ const styles = StyleSheet.create({
     color: "#e8d5b7",
     fontSize: 17,
     fontWeight: "700",
-  },
-  modalClose: {
-    color: "rgba(232,213,183,0.7)",
-    fontSize: 18,
+    fontFamily: "DMMono_400Regular",
   },
   modalBody: {
     maxHeight: 430,
@@ -1488,11 +1937,13 @@ const styles = StyleSheet.create({
   modalFooterButtonText: {
     color: "#e8d5b7",
     fontWeight: "700",
+    fontFamily: "DMMono_400Regular",
   },
   modalHint: {
     color: "rgba(232,213,183,0.7)",
     marginBottom: 8,
     fontSize: 12,
+    fontFamily: "DMMono_400Regular",
   },
   modalInput: {
     borderWidth: 1,
@@ -1503,6 +1954,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
+    fontFamily: "DMMono_400Regular",
   },
   savedRow: {
     flexDirection: "row",
@@ -1523,10 +1975,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     marginBottom: 2,
+    fontFamily: "DMMono_400Regular",
   },
   savedRowSub: {
     color: "rgba(232,213,183,0.62)",
     fontSize: 11,
+    fontFamily: "DMMono_400Regular",
   },
   savedAction: {
     borderWidth: 1,
@@ -1535,6 +1989,8 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 10,
     marginLeft: 6,
+    alignItems: "center",
+    justifyContent: "center",
   },
   savedActionDanger: {
     borderColor: "rgba(200,80,80,0.55)",
@@ -1543,6 +1999,7 @@ const styles = StyleSheet.create({
     color: "#e8d5b7",
     fontSize: 11,
     fontWeight: "700",
+    fontFamily: "DMMono_400Regular",
   },
   taskRow: {
     flexDirection: "row",
@@ -1555,15 +2012,11 @@ const styles = StyleSheet.create({
     width: 32,
     alignItems: "center",
   },
-  taskToggleText: {
-    color: "rgba(70,200,110,0.9)",
-    fontSize: 16,
-    fontWeight: "700",
-  },
   taskText: {
     flex: 1,
     color: "#e8d5b7",
     fontSize: 13,
+    fontFamily: "DMMono_400Regular",
   },
   taskTextDone: {
     textDecorationLine: "line-through",
@@ -1573,11 +2026,6 @@ const styles = StyleSheet.create({
     width: 38,
     alignItems: "center",
   },
-  taskDeleteText: {
-    color: "rgba(200,80,80,0.95)",
-    fontSize: 11,
-    fontWeight: "700",
-  },
   newTaskRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1586,5 +2034,53 @@ const styles = StyleSheet.create({
   newTaskInput: {
     flex: 1,
     marginRight: 8,
+  },
+  footerDivider: {
+    height: 1,
+    backgroundColor: "rgba(232,213,183,0.1)",
+    marginHorizontal: "10%",
+    marginVertical: 16,
+  },
+  footerWrap: {
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+  footerBackstory: {
+    fontSize: 12,
+    color: "rgba(245,166,35,0.5)",
+    lineHeight: 20,
+    textAlign: "justify",
+    fontFamily: "DMMono_400Regular",
+    marginBottom: 16,
+  },
+  footerLabel: {
+    color: "rgba(232,213,183,0.4)",
+    fontFamily: "DMMono_400Regular",
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  footerSocialRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 16,
+    marginBottom: 8,
+  },
+  footerSocialLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  footerSocialText: {
+    color: "rgba(232,213,183,0.5)",
+    fontFamily: "DMMono_400Regular",
+    fontSize: 12,
+  },
+  footerCopy: {
+    color: "rgba(232,213,183,0.4)",
+    fontFamily: "DMMono_400Regular",
+    fontSize: 12,
+    marginTop: 8,
   },
 });

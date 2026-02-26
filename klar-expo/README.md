@@ -2,6 +2,12 @@
 
 React Native + Expo rewrite of the original Klar calendar project.
 
+## Requirements
+
+- **Node.js >= 20.19.4** (LTS 20.x). Expo SDK 55 and React Native 0.83+ require Node 20+.  
+  - Check: `node -v`  
+  - Install: [nodejs.org](https://nodejs.org/) or use `nvm install 20` then `nvm use 20` (this repo has an `.nvmrc`).
+
 ## What is included
 
 - A.D / B.S mode toggle
@@ -38,9 +44,11 @@ npx expo export --platform web
 
 This project includes `eas.json` with a `preview` profile configured to output an `.apk`.
 
-1) Install dependencies:
+1) **Use Node 20+** (see Requirements). Then install dependencies (clean install if you previously used Node 18):
 
 ```bash
+node -v   # must be >= 20.19.4
+rm -rf node_modules package-lock.json   # optional but recommended if switching Node versions
 npm install
 ```
 
@@ -71,6 +79,9 @@ eas build -p android --profile preview
 6) When build finishes, Expo prints a URL/QR code. Open it on your phone and download the APK.
 
 If Android blocks install, allow **Install unknown apps** for your browser/file manager and retry.
+
+**Build failed with "Unsupported engine" or "expo is not installed"?**  
+Use Node >= 20.19.4, then from the project root run `rm -rf node_modules package-lock.json`, `npm install`, and try the build again.
 
 ### Optional: Local APK build (requires Android Studio toolchain)
 
