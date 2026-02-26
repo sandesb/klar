@@ -44,25 +44,31 @@ This project includes `eas.json` with a `preview` profile configured to output a
 npm install
 ```
 
-2) Login to Expo (first time only):
+2) Install EAS CLI:
 
 ```bash
-npx eas login
+npm install -g eas-cli
 ```
 
-3) Configure EAS build metadata in this project (first time only):
+3) Login to Expo (first time only):
 
 ```bash
-npx eas build:configure
+eas login
 ```
 
-4) Build an Android APK in Expo cloud:
+4) Configure EAS build metadata in this project (first time only):
 
 ```bash
-npx eas build -p android --profile preview
+eas build:configure
 ```
 
-5) When build finishes, Expo prints a URL/QR code. Open it on your phone and download the APK.
+5) Build an Android APK in Expo cloud:
+
+```bash
+eas build -p android --profile preview
+```
+
+6) When build finishes, Expo prints a URL/QR code. Open it on your phone and download the APK.
 
 If Android blocks install, allow **Install unknown apps** for your browser/file manager and retry.
 
