@@ -8,6 +8,7 @@ import Calendar2026 from "./calendar-2026.jsx";
 import Calendar2082 from "./calendar-2082.jsx";
 import Help from "./components/Help.jsx";
 import Dialog from "./components/Dialog.jsx";
+import SparkontoApp from "./components/sparkonto-app.jsx";
 
 const SOCIAL_LINKS = [
   { Icon: Instagram, href: "https://instagram.com/sandesb_" },
@@ -261,15 +262,11 @@ function App() {
   );
 }
 
-function RootApp() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/help" element={<Help open={true} onClose={() => {}} />} />
-        <Route path="*" element={<App />} />
-      </Routes>
-    </BrowserRouter>
-  );
-}
-
-createRoot(document.getElementById("root")).render(<RootApp />);
+createRoot(document.getElementById("root")).render(
+  <BrowserRouter>
+    <Routes>
+      <Route path="/spar" element={<SparkontoApp />} />
+      <Route path="*" element={<App />} />
+    </Routes>
+  </BrowserRouter>
+);
