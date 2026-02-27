@@ -83,13 +83,29 @@ If Android blocks install, allow **Install unknown apps** for your browser/file 
 **Build failed with "Unsupported engine" or "expo is not installed"?**  
 Use Node >= 20.19.4, then from the project root run `rm -rf node_modules package-lock.json`, `npm install`, and try the build again.
 
+**"Node.js (v18.x) is outdated" and "Cannot determine Expo SDK version / expo is not installed"?**  
+Expo SDK 55 and this project require **Node >= 20.19.4**. Do not use Node 18.
+
+1. Upgrade Node: install from [nodejs.org](https://nodejs.org/) (LTS 20 or 22) or run `nvm install 20` then `nvm use` (this repo has `.nvmrc`).
+2. From the project root run:
+   ```bash
+   node -v   # must show v20.x or v22.x
+   rm -rf node_modules package-lock.json
+   npm install
+   ```
+3. Run prebuild **without** `--no-install` so dependencies are available, or run `npm install` first if you use `--no-install` in CI.
+
 ### Optional: Local APK build (requires Android Studio toolchain)
+
+Use Node 20+ and install dependencies first (`npm install`). Then:
 
 ```bash
 npx expo prebuild -p android
 cd android
 ./gradlew assembleRelease
 ```
+
+If you use `npx expo prebuild --no-install`, ensure `npm install` has already been run with Node >= 20.19.4 so the `expo` module is present.
 
 Output APK path:
 
