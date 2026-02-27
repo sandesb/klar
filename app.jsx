@@ -1,6 +1,7 @@
 import "./main.css";
 import { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { Instagram, Youtube, Linkedin, Github, Droplets, Loader2 } from "lucide-react";
 import Calendar2026 from "./calendar-2026.jsx";
@@ -260,4 +261,15 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+function RootApp() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/help" element={<Help open={true} onClose={() => {}} />} />
+        <Route path="*" element={<App />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+createRoot(document.getElementById("root")).render(<RootApp />);
