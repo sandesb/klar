@@ -1698,8 +1698,8 @@ const styles = StyleSheet.create({
   },
   helpButtonFloating: {
     position: "absolute",
-    top: 10,
-    right: 16,
+    top: 50,
+    right: 36,
     zIndex: 20,
   },
   helpButtonText: {
