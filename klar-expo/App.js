@@ -14,8 +14,10 @@ import {
   Text,
   TextInput,
   View,
+  ActivityIndicator,
 } from "react-native";
 import Toast from "react-native-toast-message";
+import { WebView } from "react-native-webview";
 import Svg, { Path } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts } from "expo-font";
@@ -680,6 +682,9 @@ export default function App() {
   const [todoDialogOpen, setTodoDialogOpen] = useState(false);
   const [todoDialogDate, setTodoDialogDate] = useState(null);
   const [newTaskText, setNewTaskText] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpLoading, setHelpLoading] = useState(true);
+  const [helpError, setHelpError] = useState(false);
 
   useEffect(() => {
     async function loadInitialData() {
@@ -1185,22 +1190,35 @@ export default function App() {
     >
       <SafeAreaView style={styles.safe}>
         <StatusBar style="light" />
+        <Pressable
+          style={[styles.helpButton, styles.helpButtonFloating]}
+          onPress={() => {
+            setHelpOpen(true);
+            setHelpLoading(true);
+            setHelpError(false);
+          }}
+          title="Using Klary (Help)"
+        >
+          <Text style={styles.helpButtonText}>?</Text>
+        </Pressable>
         <ScrollView ref={scrollViewRef} contentContainerStyle={styles.page}>
           <KlaryBrand yearTitle={yearTitle} yearSubLabel="Year at a Glance" />
 
           <View style={styles.modeRow}>
-            <Pressable
-              style={[styles.modeButton, styles.modeButtonLeft, !isBS ? styles.modeButtonActive : null]}
-              onPress={() => switchMode(false)}
-            >
-              <Text style={[styles.modeButtonText, !isBS ? styles.modeButtonTextActive : null]}>A.D</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.modeButton, styles.modeButtonRight, isBS ? styles.modeButtonActive : null]}
-              onPress={() => switchMode(true)}
-            >
-              <Text style={[styles.modeButtonText, isBS ? styles.modeButtonTextActive : null]}>B.S</Text>
-            </Pressable>
+            <View style={styles.modeToggleWrap}>
+              <Pressable
+                style={[styles.modeButton, styles.modeButtonLeft, !isBS ? styles.modeButtonActive : null]}
+                onPress={() => switchMode(false)}
+              >
+                <Text style={[styles.modeButtonText, !isBS ? styles.modeButtonTextActive : null]}>A.D</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modeButton, styles.modeButtonRight, isBS ? styles.modeButtonActive : null]}
+                onPress={() => switchMode(true)}
+              >
+                <Text style={[styles.modeButtonText, isBS ? styles.modeButtonTextActive : null]}>B.S</Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.inputsWrap}>
@@ -1441,6 +1459,44 @@ export default function App() {
         </ScrollView>
 
         <ModalShell
+          visible={helpOpen}
+          title="Klary Help"
+          onClose={() => setHelpOpen(false)}
+        >
+          <View style={styles.helpWebWrap}>
+            {helpError ? (
+              <View style={styles.helpErrorWrap}>
+                <Text style={styles.helpErrorText}>
+                  Please connect to the internet to view the help page.
+                </Text>
+              </View>
+            ) : (
+              <>
+                {helpLoading && (
+                  <View style={styles.helpLoadingOverlay}>
+                    <ActivityIndicator size="small" color="#f5a623" />
+                    <Text style={styles.helpLoadingText}>Loading help…</Text>
+                  </View>
+                )}
+                <WebView
+                  source={{ uri: "https://klary.live/help" }}
+                  style={styles.helpWebView}
+                  onLoadStart={() => {
+                    setHelpLoading(true);
+                    setHelpError(false);
+                  }}
+                  onLoadEnd={() => setHelpLoading(false)}
+                  onError={() => {
+                    setHelpLoading(false);
+                    setHelpError(true);
+                  }}
+                />
+              </>
+            )}
+          </View>
+        </ModalShell>
+
+        <ModalShell
           visible={showWorkingDaysModal}
           title="Custom Working Days"
           onClose={() => setShowWorkingDaysModal(false)}
@@ -1601,7 +1657,12 @@ const styles = StyleSheet.create({
   modeRow: {
     flexDirection: "row",
     justifyContent: "center",
+    alignItems: "center",
     marginBottom: 14,
+  },
+  modeToggleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   modeButton: {
     borderWidth: 1,
@@ -1626,6 +1687,26 @@ const styles = StyleSheet.create({
   modeButtonActive: {
     backgroundColor: "rgba(245,166,35,0.2)",
     borderColor: "rgba(245,166,35,0.8)",
+  },
+  helpButton: {
+    borderWidth: 1,
+    borderColor: "rgba(70,200,110,0.55)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "transparent",
+  },
+  helpButtonFloating: {
+    position: "absolute",
+    top: 10,
+    right: 16,
+    zIndex: 20,
+  },
+  helpButtonText: {
+    fontFamily: "DMMono_400Regular",
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: "rgba(70,200,110,0.9)",
   },
   modeButtonText: {
     color: "rgba(245,166,35,0.7)",
@@ -2082,5 +2163,45 @@ const styles = StyleSheet.create({
     fontFamily: "DMMono_400Regular",
     fontSize: 12,
     marginTop: 8,
+  },
+  helpWebWrap: {
+    height: 420,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "#050509",
+  },
+  helpWebView: {
+    flex: 1,
+  },
+  helpLoadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(13,8,5,0.95)",
+    padding: 16,
+  },
+  helpLoadingText: {
+    marginTop: 8,
+    color: "rgba(245,166,35,0.8)",
+    fontFamily: "DMMono_400Regular",
+    fontSize: 12,
+    letterSpacing: 1.5,
+  },
+  helpErrorWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    backgroundColor: "rgba(13,8,5,0.98)",
+  },
+  helpErrorText: {
+    color: "rgba(232,213,183,0.9)",
+    fontFamily: "DMMono_400Regular",
+    fontSize: 13,
+    textAlign: "center",
   },
 });
