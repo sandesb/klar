@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "cac52dca-11be-4e7b-a03d-e4d06f8b2065"
+      }
+    },
+    "android": {
+      "package": "com.sandesb.clarity"
+    }
+  }
+}
