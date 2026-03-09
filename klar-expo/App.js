@@ -482,7 +482,7 @@ const brandStyles = StyleSheet.create({
   },
 });
 
-function ModalShell({ visible, title, onClose, children, footer }) {
+function ModalShell({ visible, title, onClose, children, footer, bodyStyle }) {
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
@@ -493,7 +493,7 @@ function ModalShell({ visible, title, onClose, children, footer }) {
               <X size={18} color="rgba(232,213,183,0.7)" />
             </Pressable>
           </View>
-          <View style={styles.modalBody}>{children}</View>
+          <View style={[styles.modalBody, bodyStyle]}>{children}</View>
           {footer ? <View style={styles.modalFooter}>{footer}</View> : null}
         </Pressable>
       </Pressable>
@@ -1605,36 +1605,46 @@ export default function App() {
           visible={todoDialogOpen}
           title={todoDialogDate ? `Tasks · ${isBS ? formatLongBS(todoDialogDate) || formatLongAD(todoDialogDate) : formatLongAD(todoDialogDate)}` : "Tasks"}
           onClose={() => setTodoDialogOpen(false)}
+          bodyStyle={styles.todoModalBody}
         >
-          {todoTasks.map((task) => (
-            <View key={task.id} style={styles.taskRow}>
-              <Pressable onPress={() => toggleTodoTask(task.id)} style={styles.taskToggle}>
-                {task.done
-                  ? <CircleCheck size={18} color="rgba(70,200,110,0.9)" />
-                  : <Circle size={18} color="rgba(232,213,183,0.7)" />}
-              </Pressable>
-              <Text style={[styles.taskText, task.done ? styles.taskTextDone : null]} numberOfLines={2}>
-                {task.text}
-              </Text>
-              <Pressable onPress={() => deleteTodoTask(task.id)} style={styles.taskDelete}>
-                <Trash2 size={16} color="rgba(200,80,80,0.9)" />
+          <View style={styles.todoModalContent}>
+            <ScrollView
+              style={styles.todoListScroll}
+              contentContainerStyle={styles.todoListContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
+              {todoTasks.map((task) => (
+                <View key={task.id} style={styles.taskRow}>
+                  <Pressable onPress={() => toggleTodoTask(task.id)} style={styles.taskToggle}>
+                    {task.done
+                      ? <CircleCheck size={18} color="rgba(70,200,110,0.9)" />
+                      : <Circle size={18} color="rgba(232,213,183,0.7)" />}
+                  </Pressable>
+                  <Text style={[styles.taskText, task.done ? styles.taskTextDone : null]} numberOfLines={2}>
+                    {task.text}
+                  </Text>
+                  <Pressable onPress={() => deleteTodoTask(task.id)} style={styles.taskDelete}>
+                    <Trash2 size={16} color="rgba(200,80,80,0.9)" />
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={styles.newTaskRow}>
+              <TextInput
+                style={[styles.modalInput, styles.newTaskInput]}
+                value={newTaskText}
+                onChangeText={setNewTaskText}
+                placeholder="New task..."
+                placeholderTextColor="rgba(232,213,183,0.25)"
+              />
+              <Pressable style={styles.inlineButton} onPress={addTodoTask}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Plus size={14} color="#e8d5b7" />
+                  <Text style={styles.inlineButtonText}>Add</Text>
+                </View>
               </Pressable>
             </View>
-          ))}
-          <View style={styles.newTaskRow}>
-            <TextInput
-              style={[styles.modalInput, styles.newTaskInput]}
-              value={newTaskText}
-              onChangeText={setNewTaskText}
-              placeholder="New task..."
-              placeholderTextColor="rgba(232,213,183,0.25)"
-            />
-            <Pressable style={styles.inlineButton} onPress={addTodoTask}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Plus size={14} color="#e8d5b7" />
-                <Text style={styles.inlineButtonText}>Add</Text>
-              </View>
-            </Pressable>
           </View>
         </ModalShell>
       </SafeAreaView>
@@ -1997,6 +2007,21 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     maxHeight: 430,
+  },
+  todoModalBody: {
+    flexDirection: "column",
+    height: 440,
+  },
+  todoModalContent: {
+    flex: 1,
+    flexDirection: "column",
+    minHeight: 0,
+  },
+  todoListScroll: {
+    flex: 1,
+  },
+  todoListContent: {
+    paddingBottom: 8,
   },
   modalFooter: {
     flexDirection: "row",
