@@ -748,7 +748,7 @@ export default function App() {
 
                     {/* Week-by-week breakdown of this month */}
                     <div style={{ display:"flex", gap:6, marginBottom:14 }}>
-                      {monthWeeks.map((w, i) => {
+                      {monthWeeks.map((w) => {
                         const isCurrentWk = w.week === cw;
                         const done        = w.completed;
                         const saved       = done && w.withdrawn <= 1500;
