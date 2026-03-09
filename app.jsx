@@ -1,7 +1,7 @@
 import "./main.css";
 import { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { Instagram, Youtube, Linkedin, Github, Droplets, Loader2 } from "lucide-react";
 import Calendar2026 from "./calendar-2026.jsx";
@@ -67,6 +67,11 @@ function CalendarToggle({ isBS, onSwitch, noPad }) {
       </button>
     </div>
   );
+}
+
+function HelpPage() {
+  const navigate = useNavigate();
+  return <Help open={true} onClose={() => navigate("/")} />;
 }
 
 function App() {
@@ -265,6 +270,7 @@ function App() {
 createRoot(document.getElementById("root")).render(
   <BrowserRouter>
     <Routes>
+      <Route path="/help" element={<HelpPage />} />
       <Route path="/spar" element={<SparkontoApp />} />
       <Route path="*" element={<App />} />
     </Routes>
