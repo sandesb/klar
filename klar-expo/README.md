@@ -2,11 +2,37 @@
 
 React Native + Expo rewrite of the original Klar calendar project.
 
+---
+
+## ⚠️ Fix: "Unsupported engine" / "expo is not installed" / "Build failed"
+
+You **must** use **Node.js >= 20.19.4**. Node 18 is not supported.
+
+1. **Upgrade Node**
+   - **With nvm:** `nvm install 20` then `nvm use` (this folder has `.nvmrc` with `20`).
+   - **Without nvm:** Install Node 20 LTS from [nodejs.org](https://nodejs.org/).
+
+2. **Confirm version**
+   ```bash
+   node -v   # must show v20.x or v22.x (e.g. v20.19.4)
+   ```
+
+3. **Clean install in this project**
+   ```bash
+   cd klar-expo
+   rm -rf node_modules package-lock.json
+   npm install
+   ```
+
+4. **Run or build again** (e.g. `npm run android`, or `eas build -p android --profile preview`).
+
+---
+
 ## Requirements
 
 - **Node.js >= 20.19.4** (LTS 20.x). Expo SDK 55 and React Native 0.83+ require Node 20+.  
   - Check: `node -v`  
-  - Install: [nodejs.org](https://nodejs.org/) or use `nvm install 20` then `nvm use 20` (this repo has an `.nvmrc`).
+  - Install: [nodejs.org](https://nodejs.org/) or use `nvm install 20` then `nvm use` (this repo has an `.nvmrc`).
 
 ## What is included
 
