@@ -71,7 +71,11 @@ function CalendarToggle({ isBS, onSwitch, noPad }) {
 
 function HelpPage() {
   const navigate = useNavigate();
-  return <Help open={true} onClose={() => navigate("/")} />;
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(0deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)" }}>
+      <Help open={true} onClose={() => navigate("/")} fullPage />
+    </div>
+  );
 }
 
 function App() {

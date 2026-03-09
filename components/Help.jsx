@@ -109,7 +109,7 @@ function IconCard({ iconContent, label, onClick, hasTryIt, dim }) {
 }
 
 // ─── Main Help component ───────────────────────────────────────
-export default function Help({ open, onClose }) {
+export default function Help({ open, onClose, fullPage }) {
   const [activeDemo, setActiveDemo] = useState(null);
 
   if (!open) return null;
@@ -117,27 +117,38 @@ export default function Help({ open, onClose }) {
   function go(demoId) { setActiveDemo(demoId); }
   function back()     { setActiveDemo(null);   }
 
+  const isFullPage = !!fullPage;
+
   return (
     <div
-      onClick={activeDemo ? undefined : onClose}
+      onClick={isFullPage ? undefined : (activeDemo ? undefined : onClose)}
       style={{
         position: "fixed", inset: 0,
-        background: "rgba(0,0,0,0.65)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 2000, padding: "16px",
+        background: isFullPage ? "transparent" : "rgba(0,0,0,0.65)",
+        display: "flex",
+        alignItems: isFullPage ? "flex-start" : "center",
+        justifyContent: "center",
+        zIndex: 2000,
+        padding: isFullPage ? "0" : "16px",
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
       }}
     >
       <div
         onClick={e => e.stopPropagation()}
         style={{
           position: "relative",
-          background: "linear-gradient(180deg,#1a0e00 0%,#0d0805 100%)",
-          border: "1px solid rgba(245,166,35,0.25)",
-          borderRadius: "16px",
-          padding: "26px 24px 20px",
-          boxShadow: "0 16px 48px rgba(0,0,0,0.6), 0 0 24px rgba(245,166,35,0.07)",
-          width: "100%", maxWidth: "520px",
-          maxHeight: "90vh", overflowY: "auto",
+          background: isFullPage ? "transparent" : "linear-gradient(180deg,#1a0e00 0%,#0d0805 100%)",
+          border: isFullPage ? "none" : "1px solid rgba(245,166,35,0.25)",
+          borderRadius: isFullPage ? 0 : "16px",
+          padding: isFullPage ? "26px 20px 32px" : "26px 24px 20px",
+          boxShadow: isFullPage ? "none" : "0 16px 48px rgba(0,0,0,0.6), 0 0 24px rgba(245,166,35,0.07)",
+          width: "100%",
+          maxWidth: isFullPage ? "560px" : "520px",
+          margin: isFullPage ? "0 auto" : undefined,
+          minHeight: isFullPage ? "100vh" : undefined,
+          maxHeight: isFullPage ? "none" : "90vh",
+          overflowY: isFullPage ? "visible" : "auto",
         }}
       >
         {/* close button */}
