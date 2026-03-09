@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Klary",
+    "slug": "klar-native",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/klaricon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-screen.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0d0805"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/klaricon.png",
+        "backgroundColor": "#0d0805"
+      },
+      "package": "com.sandesb.klarnative"
+    },
+    "web": {
+      "favicon": "./assets/klaricon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1d5fbdf7-1b49-43c2-a2a6-b21876a9871a"
+      }
+    },
+    "plugins": ["expo-font"]
+  }
+}
