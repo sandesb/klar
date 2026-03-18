@@ -31,8 +31,9 @@ export async function supabaseInsert(table, row) {
   return res.json();
 }
 
-export async function supabaseUpsert(table, row) {
-  const res = await fetch(restUrl(table), {
+export async function supabaseUpsert(table, row, onConflict = "date_key") {
+  const url = `${restUrl(table)}?on_conflict=${onConflict}`;
+  const res = await fetch(url, {
     method: "POST",
     headers: headers({
       Prefer: "resolution=merge-duplicates,return=representation",
