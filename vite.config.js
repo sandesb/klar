@@ -13,6 +13,23 @@ export default defineConfig(({ mode }) => {
         name: 'groq-highlights-api',
         configureServer(server) {
           server.middlewares.use('/api/highlights', async (req, res) => {
+            // CORS (for live deployments where the client/origin differs)
+            const origin = req.headers.origin || '*'
+            res.setHeader('Access-Control-Allow-Origin', origin)
+            res.setHeader('Vary', 'Origin')
+            res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            res.setHeader(
+              'Access-Control-Allow-Headers',
+              'Content-Type, Authorization, X-Requested-With'
+            )
+            res.setHeader('Access-Control-Max-Age', '86400')
+
+            if (req.method === 'OPTIONS') {
+              res.statusCode = 204
+              res.end()
+              return
+            }
+
             if (req.method !== 'POST') {
               res.statusCode = 405
               res.setHeader('Content-Type', 'application/json')

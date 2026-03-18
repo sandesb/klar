@@ -30,7 +30,11 @@ export function saveHighlightsCache(dateKey, text, data) {
 }
 
 export async function fetchHighlightsStream({ text, onDelta, signal }) {
-  const res = await fetch("/api/highlights", {
+  // Local dev: Vite middleware is `/api/highlights`.
+  // Netlify static deploy: Functions are `/.netlify/functions/<name>`.
+  const endpoint = import.meta.env.DEV ? "/api/highlights" : "/.netlify/functions/highlights"
+
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
