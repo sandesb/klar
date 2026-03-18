@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
-import { fetchHighlightsStream, loadHighlightsCache, saveHighlightsCache } from "../utils/groqHighlights.js";
-
-const STORAGE_PREFIX = "klary_note_";
+import { fetchHighlightsStream } from "../utils/groqHighlights.js";
+import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
 const FONT_MONO = "'DM Mono', monospace";
 const FONT_SERIF = "'Playfair Display', serif";
 
@@ -40,17 +39,6 @@ function formatWeekLabel(weekStart) {
   return `${MONTH_NAMES[s.getMonth()]} ${s.getDate()} – ${MONTH_NAMES[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
 }
 
-function loadNote(dateKey) {
-  try { return localStorage.getItem(STORAGE_PREFIX + dateKey) ?? ""; } catch { return ""; }
-}
-
-function saveNote(dateKey, text) {
-  try {
-    if (text.trim() === "") localStorage.removeItem(STORAGE_PREFIX + dateKey);
-    else localStorage.setItem(STORAGE_PREFIX + dateKey, text);
-  } catch {}
-}
-
 function useDebounce(fn, delay) {
   const timerRef = useRef(null);
   return useCallback((...args) => {
@@ -59,25 +47,39 @@ function useDebounce(fn, delay) {
   }, [fn, delay]);
 }
 
-function DayCard({ date, isToday, isActive, onClick }) {
+function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlights, onNoteChange }) {
   const key = toDateKey(date);
-  const [text, setText] = useState(() => loadNote(key));
+  const [text, setText] = useState(initialNote ?? "");
   const [isEditing, setIsEditing] = useState(false);
   const [panel, setPanel] = useState("note"); // 'note' | 'highlights'
   const [highlightsLoading, setHighlightsLoading] = useState(false);
   const [highlightsRaw, setHighlightsRaw] = useState("");
-  const [highlightsData, setHighlightsData] = useState(null);
+  const [highlightsData, setHighlightsData] = useState(initialHighlights ?? null);
   const [highlightsErr, setHighlightsErr] = useState("");
   const abortRef = useRef(null);
   const [saved, setSaved] = useState(false);
   const textareaRef = useRef(null);
   const hasNote = text.trim().length > 0;
 
-  const debouncedSave = useDebounce((k, t) => {
-    saveNote(k, t);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
-  }, 600);
+  // Sync when initial data changes (e.g. week navigation)
+  useEffect(() => {
+    setText(initialNote ?? "");
+  }, [initialNote]);
+
+  useEffect(() => {
+    setHighlightsData(initialHighlights ?? null);
+  }, [initialHighlights]);
+
+  const debouncedSave = useDebounce(async (k, t) => {
+    try {
+      await saveNoteText(k, t);
+      onNoteChange?.(k, t);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      console.error("Save note error:", e);
+    }
+  }, 800);
 
   // Exit edit mode when card collapses
   useEffect(() => {
@@ -114,13 +116,10 @@ function DayCard({ date, isToday, isActive, onClick }) {
     setIsEditing(false);
     setPanel("highlights");
     setHighlightsErr("");
-    setHighlightsData(null);
     setHighlightsRaw("");
 
-    // cache hit
-    const cached = loadHighlightsCache(key, text);
-    if (cached) {
-      setHighlightsData(cached);
+    // Use existing highlights from Supabase if available
+    if (highlightsData) {
       return;
     }
 
@@ -155,7 +154,8 @@ function DayCard({ date, isToday, isActive, onClick }) {
 
       if (parsed) {
         setHighlightsData(parsed);
-        saveHighlightsCache(key, text, parsed);
+        // Save to Supabase
+        await saveHighlightsToDb(key, parsed);
         toast("Highlights ready", {
           style: {
             background: "#1a0e00",
@@ -715,10 +715,37 @@ export default function WeeklyNotes() {
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [activeKey, setActiveKey] = useState(() => toDateKey(today));
+  const [notesData, setNotesData] = useState({}); // { dateKey: { note_text, highlights } }
+  const [loading, setLoading] = useState(true);
 
   const days = getWeekDays(weekStart);
   const todayKey = toDateKey(today);
   const isCurrentWeek = toDateKey(weekStart) === toDateKey(startOfWeek(today));
+
+  // Fetch notes for the current week from Supabase
+  useEffect(() => {
+    let cancelled = false;
+    async function loadWeekNotes() {
+      setLoading(true);
+      const weekDays = getWeekDays(weekStart);
+      const dateKeys = weekDays.map((d) => toDateKey(d));
+      const data = await fetchNoteRows(dateKeys);
+      if (!cancelled) {
+        setNotesData(data);
+        setLoading(false);
+      }
+    }
+    loadWeekNotes();
+    return () => { cancelled = true; };
+  }, [weekStart]);
+
+  // Callback when a note is saved (update local state for summary dots)
+  function handleNoteChange(dateKey, noteText) {
+    setNotesData((prev) => ({
+      ...prev,
+      [dateKey]: { ...prev[dateKey], note_text: noteText },
+    }));
+  }
 
   function prevWeek() {
     setWeekStart(prev => {
@@ -883,8 +910,22 @@ export default function WeeklyNotes() {
 
         {/* Day cards */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {days.map((day) => {
+          {loading ? (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              padding: "40px 0", gap: 12,
+            }}>
+              <Loader2 size={18} color="rgba(245,166,35,0.6)" style={{ animation: "spin 0.8s linear infinite" }} />
+              <span style={{
+                fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "0.15em",
+                color: "rgba(245,166,35,0.5)",
+              }}>
+                Loading notes…
+              </span>
+            </div>
+          ) : days.map((day) => {
             const key = toDateKey(day);
+            const row = notesData[key] || {};
             return (
               <DayCard
                 key={key}
@@ -892,6 +933,9 @@ export default function WeeklyNotes() {
                 isToday={key === todayKey}
                 isActive={key === activeKey}
                 onClick={() => setActiveKey(prev => prev === key ? null : key)}
+                initialNote={row.note_text || ""}
+                initialHighlights={row.highlights || null}
+                onNoteChange={handleNoteChange}
               />
             );
           })}
@@ -904,7 +948,8 @@ export default function WeeklyNotes() {
         }}>
           {days.map((day) => {
             const key = toDateKey(day);
-            const hasNote = loadNote(key).trim().length > 0;
+            const row = notesData[key] || {};
+            const hasNote = (row.note_text || "").trim().length > 0;
             const isTodayDot = key === todayKey;
             return (
               <div
@@ -942,7 +987,7 @@ export default function WeeklyNotes() {
           fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.15em",
           color: "rgba(232,213,183,0.15)",
         }}>
-          · notes auto-save to your browser · navigate weeks with the arrows ·
+          · notes sync to cloud · navigate weeks with the arrows ·
         </p>
 
       </div>

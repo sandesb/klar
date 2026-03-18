@@ -1,34 +1,7 @@
-const CACHE_PREFIX = "klary_highlights_";
-
-function hashString(input) {
-  let h = 2166136261;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(16);
-}
-
-function getCacheKey(dateKey, text) {
-  return `${CACHE_PREFIX}${dateKey}_${hashString(text)}`;
-}
-
-export function loadHighlightsCache(dateKey, text) {
-  try {
-    const raw = localStorage.getItem(getCacheKey(dateKey, text));
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-export function saveHighlightsCache(dateKey, text, data) {
-  try {
-    localStorage.setItem(getCacheKey(dateKey, text), JSON.stringify(data));
-  } catch {}
-}
-
+/**
+ * Fetch highlights from Groq via the backend endpoint (Vite middleware or Netlify function).
+ * Highlights are now stored in Supabase via notesStorage.js, not localStorage.
+ */
 export async function fetchHighlightsStream({ text, onDelta, signal }) {
   // Local dev: Vite middleware is `/api/highlights`.
   // Netlify static deploy: Functions are `/.netlify/functions/<name>`.
