@@ -9,6 +9,8 @@ import Calendar2082 from "./calendar-2082.jsx";
 import Help from "./components/Help.jsx";
 import Dialog from "./components/Dialog.jsx";
 import SparkontoApp from "./components/sparkonto-app.jsx";
+import WeeklyNotes from "./components/WeeklyNotes.jsx";
+import NoteGate from "./components/NoteGate.jsx";
 
 const SOCIAL_LINKS = [
   { Icon: Instagram, href: "https://instagram.com/sandesb_" },
@@ -276,6 +278,7 @@ createRoot(document.getElementById("root")).render(
     <Routes>
       <Route path="/help" element={<HelpPage />} />
       <Route path="/spar" element={<SparkontoApp />} />
+      <Route path="/note" element={<NoteGate><WeeklyNotes /></NoteGate>} />
       <Route path="*" element={<App />} />
     </Routes>
   </BrowserRouter>

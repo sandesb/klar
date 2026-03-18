@@ -1,0 +1,951 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2 } from "lucide-react";
+import toast from "react-hot-toast";
+import { fetchHighlightsStream, loadHighlightsCache, saveHighlightsCache } from "../utils/groqHighlights.js";
+
+const STORAGE_PREFIX = "klary_note_";
+const FONT_MONO = "'DM Mono', monospace";
+const FONT_SERIF = "'Playfair Display', serif";
+
+const DAY_NAMES  = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAY_SHORT  = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function toDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+}
+
+function startOfWeek(date) {
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() - d.getDay()); // Sunday = 0
+  return d;
+}
+
+function getWeekDays(weekStart) {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+}
+
+function formatWeekLabel(weekStart) {
+  const end = new Date(weekStart);
+  end.setDate(end.getDate() + 6);
+  const s = weekStart, e = end;
+  if (s.getMonth() === e.getMonth()) {
+    return `${MONTH_NAMES[s.getMonth()]} ${s.getDate()} – ${e.getDate()}, ${s.getFullYear()}`;
+  }
+  return `${MONTH_NAMES[s.getMonth()]} ${s.getDate()} – ${MONTH_NAMES[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
+}
+
+function loadNote(dateKey) {
+  try { return localStorage.getItem(STORAGE_PREFIX + dateKey) ?? ""; } catch { return ""; }
+}
+
+function saveNote(dateKey, text) {
+  try {
+    if (text.trim() === "") localStorage.removeItem(STORAGE_PREFIX + dateKey);
+    else localStorage.setItem(STORAGE_PREFIX + dateKey, text);
+  } catch {}
+}
+
+function useDebounce(fn, delay) {
+  const timerRef = useRef(null);
+  return useCallback((...args) => {
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => fn(...args), delay);
+  }, [fn, delay]);
+}
+
+function DayCard({ date, isToday, isActive, onClick }) {
+  const key = toDateKey(date);
+  const [text, setText] = useState(() => loadNote(key));
+  const [isEditing, setIsEditing] = useState(false);
+  const [panel, setPanel] = useState("note"); // 'note' | 'highlights'
+  const [highlightsLoading, setHighlightsLoading] = useState(false);
+  const [highlightsRaw, setHighlightsRaw] = useState("");
+  const [highlightsData, setHighlightsData] = useState(null);
+  const [highlightsErr, setHighlightsErr] = useState("");
+  const abortRef = useRef(null);
+  const [saved, setSaved] = useState(false);
+  const textareaRef = useRef(null);
+  const hasNote = text.trim().length > 0;
+
+  const debouncedSave = useDebounce((k, t) => {
+    saveNote(k, t);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  }, 600);
+
+  // Exit edit mode when card collapses
+  useEffect(() => {
+    if (!isActive) {
+      setIsEditing(false);
+      setPanel("note");
+      setHighlightsLoading(false);
+      setHighlightsErr("");
+      abortRef.current?.abort?.();
+      abortRef.current = null;
+    }
+  }, [isActive]);
+
+  // Auto-focus textarea when entering edit mode
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        const len = textareaRef.current?.value.length ?? 0;
+        textareaRef.current?.setSelectionRange(len, len);
+      }, 60);
+    }
+  }, [isEditing]);
+
+  function handleChange(e) {
+    const val = e.target.value;
+    setText(val);
+    debouncedSave(key, val);
+  }
+
+  async function runHighlights() {
+    if (!hasNote) return;
+    if (!isActive) onClick();
+    setIsEditing(false);
+    setPanel("highlights");
+    setHighlightsErr("");
+    setHighlightsData(null);
+    setHighlightsRaw("");
+
+    // cache hit
+    const cached = loadHighlightsCache(key, text);
+    if (cached) {
+      setHighlightsData(cached);
+      return;
+    }
+
+    abortRef.current?.abort?.();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    setHighlightsLoading(true);
+    try {
+      let assembled = "";
+      const full = await fetchHighlightsStream({
+        text,
+        signal: ctrl.signal,
+        onDelta: (delta) => {
+          assembled += delta;
+          setHighlightsRaw((prev) => prev + delta);
+        },
+      });
+
+      // Try parse JSON; fallback to raw display
+      let parsed = null;
+      try {
+        parsed = JSON.parse(full);
+      } catch {
+        const trimmed = (assembled || full || "").trim();
+        const start = trimmed.indexOf("{");
+        const end = trimmed.lastIndexOf("}");
+        if (start !== -1 && end !== -1 && end > start) {
+          parsed = JSON.parse(trimmed.slice(start, end + 1));
+        }
+      }
+
+      if (parsed) {
+        setHighlightsData(parsed);
+        saveHighlightsCache(key, text, parsed);
+        toast("Highlights ready", {
+          style: {
+            background: "#1a0e00",
+            color: "#e8d5b7",
+            border: "1px solid rgba(245,166,35,0.35)",
+            fontFamily: "'DM Mono', monospace",
+            fontSize: "12px",
+            letterSpacing: "0.05em",
+          },
+        });
+      } else {
+        setHighlightsErr("Could not parse highlights. Showing raw output.");
+      }
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      setHighlightsErr("Failed to generate highlights. Is the Groq key set in .env?");
+    } finally {
+      setHighlightsLoading(false);
+    }
+  }
+
+  const wordCount = text.trim() === "" ? 0 : text.trim().split(/\s+/).length;
+
+  const borderColor = isEditing
+    ? "rgba(245,166,35,0.75)"
+    : isActive
+      ? "rgba(245,166,35,0.42)"
+      : isToday
+        ? "rgba(70,200,110,0.45)"
+        : hasNote
+          ? "rgba(245,166,35,0.22)"
+          : "rgba(255,255,255,0.07)";
+
+  const bgColor = isEditing
+    ? "rgba(245,166,35,0.07)"
+    : isActive
+      ? "rgba(245,166,35,0.04)"
+      : isToday
+        ? "rgba(70,200,110,0.04)"
+        : "rgba(255,255,255,0.025)";
+
+  return (
+    <div style={{
+      borderRadius: 16,
+      border: `1px solid ${borderColor}`,
+      background: bgColor,
+      transition: "border-color 0.2s ease, background 0.2s ease",
+      overflow: "hidden",
+    }}>
+
+      {/* ── Header row (click = toggle expand) ── */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onClick}
+        onKeyDown={e => e.key === "Enter" && onClick()}
+        style={{
+          display: "flex", alignItems: "center", gap: 14,
+          padding: "16px 20px", cursor: "pointer",
+        }}
+      >
+        {/* Date circle */}
+        <div style={{
+          width: 48, height: 48, borderRadius: "50%", flexShrink: 0,
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          background: isToday ? "rgba(70,200,110,0.18)" : isActive ? "rgba(245,166,35,0.15)" : "rgba(255,255,255,0.04)",
+          border: isToday ? "1.5px solid rgba(70,200,110,0.6)" : isActive ? "1.5px solid rgba(245,166,35,0.5)" : "1px solid rgba(255,255,255,0.08)",
+        }}>
+          <span style={{
+            fontFamily: FONT_MONO, fontSize: 16, fontWeight: 700, lineHeight: 1,
+            color: isToday ? "rgba(70,200,110,0.95)" : isActive ? "#f5a623" : "#e8d5b7",
+          }}>
+            {date.getDate()}
+          </span>
+          <span style={{
+            fontFamily: FONT_MONO, fontSize: 8.5, letterSpacing: "0.1em", textTransform: "uppercase",
+            color: isToday ? "rgba(70,200,110,0.7)" : "rgba(232,213,183,0.4)", marginTop: 1,
+          }}>
+            {MONTH_NAMES[date.getMonth()]}
+          </span>
+        </div>
+
+        {/* Day label + preview */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+            <span style={{
+              fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase",
+              color: isToday ? "rgba(70,200,110,0.85)" : isActive ? "rgba(245,166,35,0.9)" : "rgba(232,213,183,0.55)",
+            }}>
+              {DAY_NAMES[date.getDay()]}
+            </span>
+            <button
+              type="button"
+              title="Generate highlights"
+              onClick={(e) => { e.stopPropagation(); runHighlights(); }}
+              disabled={!hasNote || highlightsLoading}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: highlightsLoading ? "rgba(245,166,35,0.09)" : "rgba(245,166,35,0.06)",
+                border: "1px solid rgba(245,166,35,0.18)",
+                borderRadius: 999,
+                padding: "2px 10px",
+                cursor: !hasNote ? "not-allowed" : "pointer",
+                opacity: !hasNote ? 0.45 : 1,
+                color: "rgba(245,166,35,0.7)",
+                fontFamily: FONT_MONO,
+                fontSize: 9.5,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
+              {highlightsLoading ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> : <Sparkles size={12} />}
+              Highlights
+            </button>
+            {isToday && (
+              <span style={{
+                fontFamily: FONT_MONO, fontSize: 8.5, letterSpacing: "0.12em", textTransform: "uppercase",
+                color: "rgba(70,200,110,0.8)", background: "rgba(70,200,110,0.1)",
+                border: "1px solid rgba(70,200,110,0.25)", borderRadius: 5, padding: "1px 7px",
+              }}>
+                Today
+              </span>
+            )}
+            {isEditing && (
+              <span style={{
+                fontFamily: FONT_MONO, fontSize: 8.5, letterSpacing: "0.12em", textTransform: "uppercase",
+                color: "rgba(245,166,35,0.7)", background: "rgba(245,166,35,0.1)",
+                border: "1px solid rgba(245,166,35,0.25)", borderRadius: 5, padding: "1px 7px",
+              }}>
+                Editing
+              </span>
+            )}
+          </div>
+          {/* One-line preview when collapsed */}
+          {!isActive && (
+            <div style={{
+              fontFamily: FONT_MONO, fontSize: 11.5,
+              color: hasNote ? "rgba(232,213,183,0.5)" : "rgba(232,213,183,0.2)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {hasNote ? text.replace(/\n/g, " · ") : "Click to read or add a note…"}
+            </div>
+          )}
+        </div>
+
+        {/* Right: word count + pen icon */}
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}
+          onClick={e => e.stopPropagation()}
+        >
+          {hasNote && !isActive && (
+            <span style={{
+              fontFamily: FONT_MONO, fontSize: 9.5, letterSpacing: "0.1em",
+              color: "rgba(245,166,35,0.5)", background: "rgba(245,166,35,0.07)",
+              border: "1px solid rgba(245,166,35,0.18)", borderRadius: 5, padding: "2px 8px",
+            }}>
+              {wordCount}w
+            </span>
+          )}
+          {/* PenLine: click to enter edit mode (stops header toggle) */}
+          <button
+            type="button"
+            title="Edit note"
+            onClick={e => {
+              e.stopPropagation();
+              if (!isActive) onClick(); // open card first if collapsed
+              setIsEditing(true);
+            }}
+            style={{
+              background: "none", border: "none", cursor: "pointer", padding: 4,
+              display: "flex", alignItems: "center", borderRadius: 6,
+            }}
+          >
+            <PenLine
+              size={14}
+              color={isEditing ? "rgba(245,166,35,0.9)" : isActive ? "rgba(245,166,35,0.5)" : "rgba(232,213,183,0.2)"}
+              style={{ transition: "color 0.2s" }}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Expanded body ── */}
+      {isActive && (
+        <div style={{ padding: "0 20px 20px" }}>
+          <div style={{ height: 1, background: "rgba(245,166,35,0.1)", marginBottom: 16 }} />
+
+          {isEditing ? (
+            /* ── EDIT MODE ── */
+            <>
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={handleChange}
+                placeholder={`What happened on ${DAY_NAMES[date.getDay()]}?\n\nWrite your thoughts, tasks, reflections…`}
+                style={{
+                  width: "100%",
+                  minHeight: 200,
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid rgba(245,166,35,0.22)",
+                  borderRadius: 12,
+                  padding: "14px 16px",
+                  color: "#e8d5b7",
+                  fontFamily: FONT_MONO,
+                  fontSize: 13.5,
+                  lineHeight: 1.75,
+                  resize: "vertical",
+                  outline: "none",
+                  boxSizing: "border-box",
+                  transition: "border-color 0.2s",
+                }}
+                onFocus={e => { e.target.style.borderColor = "rgba(245,166,35,0.55)"; }}
+                onBlur={e => { e.target.style.borderColor = "rgba(245,166,35,0.22)"; }}
+              />
+              <div style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                marginTop: 10,
+              }}>
+                <span style={{
+                  fontFamily: FONT_MONO, fontSize: 10.5, letterSpacing: "0.1em",
+                  color: "rgba(232,213,183,0.3)",
+                }}>
+                  {wordCount} word{wordCount !== 1 ? "s" : ""}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {saved ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: FONT_MONO, fontSize: 10, color: "rgba(70,200,110,0.7)" }}>
+                      <Check size={11} color="rgba(70,200,110,0.8)" /> Saved
+                    </span>
+                  ) : text.trim() ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: FONT_MONO, fontSize: 10, color: "rgba(232,213,183,0.3)" }}>
+                      <Clock size={11} color="rgba(232,213,183,0.3)" /> Saving…
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: 8, padding: "5px 12px", cursor: "pointer",
+                      fontFamily: FONT_MONO, fontSize: 10.5, letterSpacing: "0.08em",
+                      color: "rgba(232,213,183,0.6)", display: "flex", alignItems: "center", gap: 5,
+                      transition: "all 0.15s",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,166,35,0.45)"; e.currentTarget.style.color = "#e8d5b7"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "rgba(232,213,183,0.6)"; }}
+                  >
+                    <X size={11} /> Done
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* ── VIEW MODE ── */
+            <div style={{
+              background: "rgba(255,255,255,0.02)",
+              border: "1px solid rgba(245,166,35,0.12)",
+              borderRadius: 12,
+              padding: "16px 18px",
+            }}>
+              {/* Panel switch */}
+              {hasNote && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setPanel("note")}
+                    style={{
+                      background: panel === "note" ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.03)",
+                      border: panel === "note" ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      color: panel === "note" ? "rgba(245,166,35,0.9)" : "rgba(232,213,183,0.35)",
+                      fontFamily: FONT_MONO,
+                      fontSize: 9.5,
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Note
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runHighlights()}
+                    style={{
+                      background: panel === "highlights" ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.03)",
+                      border: panel === "highlights" ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      color: panel === "highlights" ? "rgba(245,166,35,0.9)" : "rgba(232,213,183,0.35)",
+                      fontFamily: FONT_MONO,
+                      fontSize: 9.5,
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <Sparkles size={12} />
+                    Highlights
+                  </button>
+                  {highlightsLoading && (
+                    <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <Loader2 size={14} color="rgba(245,166,35,0.65)" style={{ animation: "spin 0.8s linear infinite" }} />
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em", color: "rgba(245,166,35,0.55)" }}>
+                        Summarizing…
+                      </span>
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {panel === "highlights" && hasNote ? (
+                <>
+                  {highlightsErr && (
+                    <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: "rgba(220,80,80,0.85)", marginBottom: 10 }}>
+                      {highlightsErr}
+                    </div>
+                  )}
+
+                  {highlightsData ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                      {/* Checks */}
+                      <div style={{
+                        border: "1px solid rgba(245,166,35,0.1)",
+                        background: "rgba(245,166,35,0.04)",
+                        borderRadius: 12,
+                        padding: "12px 14px",
+                      }}>
+                        <div style={{
+                          fontFamily: FONT_MONO,
+                          fontSize: 9.5,
+                          letterSpacing: "0.22em",
+                          textTransform: "uppercase",
+                          color: "rgba(245,166,35,0.5)",
+                          marginBottom: 10,
+                        }}>
+                          Checks
+                        </div>
+                        {(() => {
+                          const c = highlightsData?.checks || {};
+                          const items = [
+                            { key: "cold_shower", label: "Cold shower", showMinutes: false },
+                            { key: "morning_meditation", label: "Morning meditation", showMinutes: true },
+                            { key: "gym", label: "Gym", showMinutes: true },
+                            { key: "evening_meditation", label: "Evening meditation", showMinutes: true },
+                          ];
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {items.map((it) => {
+                                const val = c[it.key] || {};
+                                const done = !!val.done;
+                                const minutes = typeof val.minutes === "number" ? val.minutes : null;
+                                const bodyParts = Array.isArray(val.body_parts) ? val.body_parts.filter(Boolean) : [];
+                                return (
+                                  <div key={it.key} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                                    <span style={{
+                                      width: 9, height: 9, borderRadius: "50%", marginTop: 5, flexShrink: 0,
+                                      background: done ? "rgba(70,200,110,0.8)" : "rgba(255,255,255,0.14)",
+                                      boxShadow: done ? "0 0 10px rgba(70,200,110,0.35)" : "none",
+                                      border: done ? "1px solid rgba(70,200,110,0.55)" : "1px solid rgba(255,255,255,0.16)",
+                                    }} />
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{
+                                        display: "flex", flexWrap: "wrap", gap: 8, alignItems: "baseline",
+                                        fontFamily: FONT_MONO, fontSize: 12.5, lineHeight: 1.5,
+                                        color: done ? "rgba(232,213,183,0.85)" : "rgba(232,213,183,0.45)",
+                                      }}>
+                                        <span style={{ fontWeight: 700, color: done ? "rgba(70,200,110,0.9)" : "rgba(232,213,183,0.65)" }}>
+                                          {done ? "Done" : "Not done"}
+                                        </span>
+                                        <span style={{ color: "rgba(232,213,183,0.75)" }}>{it.label}</span>
+                                        {it.showMinutes && minutes != null && (
+                                          <span style={{
+                                            fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase",
+                                            color: "rgba(245,166,35,0.55)",
+                                            background: "rgba(245,166,35,0.06)",
+                                            border: "1px solid rgba(245,166,35,0.16)",
+                                            borderRadius: 7, padding: "1px 8px",
+                                          }}>
+                                            {minutes} min
+                                          </span>
+                                        )}
+                                        {it.key === "gym" && bodyParts.length > 0 && (
+                                          <span style={{
+                                            fontSize: 10, letterSpacing: "0.08em",
+                                            color: "rgba(80,160,220,0.85)",
+                                            background: "rgba(80,160,220,0.08)",
+                                            border: "1px solid rgba(80,160,220,0.18)",
+                                            borderRadius: 7, padding: "1px 8px",
+                                          }}>
+                                            {bodyParts.join(", ")}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {val.evidence && (
+                                        <div style={{
+                                          marginTop: 3,
+                                          fontFamily: FONT_MONO, fontSize: 11.5, lineHeight: 1.65,
+                                          color: "rgba(232,213,183,0.35)",
+                                        }}>
+                                          “{val.evidence}”
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Special incidents */}
+                      {Array.isArray(highlightsData?.checks?.special_incidents) && highlightsData.checks.special_incidents.length > 0 && (
+                        <div style={{
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          background: "rgba(255,255,255,0.02)",
+                          borderRadius: 12,
+                          padding: "12px 14px",
+                        }}>
+                          <div style={{
+                            fontFamily: FONT_MONO,
+                            fontSize: 9.5,
+                            letterSpacing: "0.22em",
+                            textTransform: "uppercase",
+                            color: "rgba(245,166,35,0.5)",
+                            marginBottom: 10,
+                          }}>
+                            Special incidents
+                          </div>
+                          <ul style={{ margin: 0, paddingLeft: 18, color: "rgba(232,213,183,0.72)", lineHeight: 1.7 }}>
+                            {highlightsData.checks.special_incidents.slice(0, 8).map((s, idx) => (
+                              <li key={idx} style={{ fontFamily: FONT_MONO, fontSize: 12.5 }}>{s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Literal bullets */}
+                      {Array.isArray(highlightsData?.literal_bullets) && highlightsData.literal_bullets.length > 0 && (
+                        <div style={{
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          background: "rgba(255,255,255,0.02)",
+                          borderRadius: 12,
+                          padding: "12px 14px",
+                        }}>
+                          <div style={{
+                            fontFamily: FONT_MONO,
+                            fontSize: 9.5,
+                            letterSpacing: "0.22em",
+                            textTransform: "uppercase",
+                            color: "rgba(245,166,35,0.5)",
+                            marginBottom: 10,
+                          }}>
+                            Highlights
+                          </div>
+                          <ul style={{ margin: 0, paddingLeft: 18, color: "rgba(232,213,183,0.72)", lineHeight: 1.7 }}>
+                            {highlightsData.literal_bullets.slice(0, 10).map((b, idx) => (
+                              <li key={idx} style={{ fontFamily: FONT_MONO, fontSize: 12.5 }}>{b}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{
+                      fontFamily: FONT_MONO,
+                      fontSize: 12.5,
+                      lineHeight: 1.8,
+                      color: "rgba(232,213,183,0.55)",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                    }}>
+                      {highlightsLoading ? highlightsRaw || "Summarizing…" : (highlightsRaw || "Click Highlights to generate.")}
+                    </div>
+                  )}
+                </>
+              ) : hasNote ? (
+                <p style={{
+                  fontFamily: FONT_MONO,
+                  fontSize: 13.5,
+                  lineHeight: 1.8,
+                  color: "#e8d5b7",
+                  margin: 0,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}>
+                  {text}
+                </p>
+              ) : (
+                <p style={{
+                  fontFamily: FONT_MONO, fontSize: 12.5, lineHeight: 1.7,
+                  color: "rgba(232,213,183,0.22)", margin: 0,
+                  fontStyle: "italic",
+                }}>
+                  Nothing written yet.{" "}
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer", padding: 0,
+                      fontFamily: FONT_MONO, fontSize: 12.5, fontStyle: "italic",
+                      color: "rgba(245,166,35,0.55)", textDecoration: "underline",
+                    }}
+                  >
+                    Click here to write.
+                  </button>
+                </p>
+              )}
+              {hasNote && (
+                <div style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  marginTop: 14, paddingTop: 10,
+                  borderTop: "1px solid rgba(245,166,35,0.08)",
+                }}>
+                  <span style={{
+                    fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em",
+                    color: "rgba(232,213,183,0.25)",
+                  }}>
+                    {wordCount} word{wordCount !== 1 ? "s" : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    style={{
+                      background: "rgba(245,166,35,0.08)",
+                      border: "1px solid rgba(245,166,35,0.28)",
+                      borderRadius: 8, padding: "5px 13px", cursor: "pointer",
+                      fontFamily: FONT_MONO, fontSize: 10.5, letterSpacing: "0.08em",
+                      color: "rgba(245,166,35,0.75)", display: "flex", alignItems: "center", gap: 6,
+                      transition: "all 0.15s",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,166,35,0.14)"; e.currentTarget.style.color = "#f5a623"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,166,35,0.08)"; e.currentTarget.style.color = "rgba(245,166,35,0.75)"; }}
+                  >
+                    <PenLine size={11} /> Edit
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function WeeklyNotes() {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [activeKey, setActiveKey] = useState(() => toDateKey(today));
+
+  const days = getWeekDays(weekStart);
+  const todayKey = toDateKey(today);
+  const isCurrentWeek = toDateKey(weekStart) === toDateKey(startOfWeek(today));
+
+  function prevWeek() {
+    setWeekStart(prev => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() - 7);
+      return d;
+    });
+  }
+
+  function nextWeek() {
+    setWeekStart(prev => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() + 7);
+      return d;
+    });
+  }
+
+  function goToday() {
+    setWeekStart(startOfWeek(today));
+    setActiveKey(todayKey);
+  }
+
+  const weekNumber = (() => {
+    const d = new Date(weekStart);
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    const week1 = new Date(d.getFullYear(), 0, 4);
+    return 1 + Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+  })();
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "linear-gradient(0deg, #0d0805 0%, #1a0e00 40%, #0a0d1a 100%)",
+      fontFamily: FONT_MONO,
+    }}>
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
+      <div style={{
+        maxWidth: 680,
+        margin: "0 auto",
+        padding: "48px 20px 80px",
+      }}>
+
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 48 }}>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+            marginBottom: 12,
+          }}>
+            <BookOpen size={18} color="rgba(245,166,35,0.6)" />
+            <span style={{
+              fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.35em",
+              textTransform: "uppercase", color: "rgba(245,166,35,0.5)",
+            }}>
+              Weekly Notes
+            </span>
+          </div>
+          <h1 style={{
+            fontFamily: FONT_SERIF, fontSize: 52, fontWeight: 400,
+            color: "#e8d5b7", margin: "0 0 10px",
+            letterSpacing: "-0.5px", lineHeight: 1.1,
+          }}>
+            Klar<span style={{ color: "rgba(237,135,19,0.9)", fontStyle: "italic" }}>'</span>y
+          </h1>
+          <p style={{
+            fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.25em",
+            textTransform: "uppercase", color: "rgba(245,166,35,0.4)", margin: 0,
+          }}>
+            · A log for every day ·
+          </p>
+        </div>
+
+        {/* Week navigation */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          marginBottom: 24,
+          padding: "14px 18px",
+          borderRadius: 14,
+          border: "1px solid rgba(245,166,35,0.16)",
+          background: "rgba(245,166,35,0.04)",
+        }}>
+          <button
+            type="button"
+            onClick={prevWeek}
+            style={{
+              background: "transparent", border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 8, padding: "7px 10px", cursor: "pointer",
+              color: "rgba(232,213,183,0.6)", display: "flex", alignItems: "center",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,166,35,0.5)"; e.currentTarget.style.color = "#f5a623"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "rgba(232,213,183,0.6)"; }}
+          >
+            <ChevronLeft size={16} />
+          </button>
+
+          <div style={{ textAlign: "center" }}>
+            <div style={{
+              fontFamily: FONT_SERIF, fontSize: 17,
+              color: "#e8d5b7", marginBottom: 4,
+            }}>
+              {formatWeekLabel(weekStart)}
+            </div>
+            <div style={{
+              fontFamily: FONT_MONO, fontSize: 9.5, letterSpacing: "0.2em",
+              textTransform: "uppercase", color: "rgba(245,166,35,0.45)",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}>
+              <Calendar size={10} color="rgba(245,166,35,0.4)" />
+              Week {weekNumber}
+              {isCurrentWeek && (
+                <span style={{
+                  background: "rgba(70,200,110,0.1)",
+                  border: "1px solid rgba(70,200,110,0.25)",
+                  borderRadius: 5, padding: "1px 7px",
+                  color: "rgba(70,200,110,0.75)",
+                  fontSize: 8.5,
+                }}>
+                  Current
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 6 }}>
+            {!isCurrentWeek && (
+              <button
+                type="button"
+                onClick={goToday}
+                style={{
+                  background: "transparent",
+                  border: "1px solid rgba(70,200,110,0.35)",
+                  borderRadius: 8, padding: "7px 12px", cursor: "pointer",
+                  color: "rgba(70,200,110,0.75)",
+                  fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(70,200,110,0.7)"; e.currentTarget.style.color = "rgba(70,200,110,0.95)"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(70,200,110,0.35)"; e.currentTarget.style.color = "rgba(70,200,110,0.75)"; }}
+              >
+                Today
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={nextWeek}
+              style={{
+                background: "transparent", border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 8, padding: "7px 10px", cursor: "pointer",
+                color: "rgba(232,213,183,0.6)", display: "flex", alignItems: "center",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,166,35,0.5)"; e.currentTarget.style.color = "#f5a623"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "rgba(232,213,183,0.6)"; }}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Day cards */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {days.map((day) => {
+            const key = toDateKey(day);
+            return (
+              <DayCard
+                key={key}
+                date={day}
+                isToday={key === todayKey}
+                isActive={key === activeKey}
+                onClick={() => setActiveKey(prev => prev === key ? null : key)}
+              />
+            );
+          })}
+        </div>
+
+        {/* Week summary strip */}
+        <div style={{
+          marginTop: 28,
+          display: "flex", gap: 6, justifyContent: "center",
+        }}>
+          {days.map((day) => {
+            const key = toDateKey(day);
+            const hasNote = loadNote(key).trim().length > 0;
+            const isTodayDot = key === todayKey;
+            return (
+              <div
+                key={key}
+                title={`${DAY_SHORT[day.getDay()]} ${day.getDate()}`}
+                style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                }}
+              >
+                <div style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: hasNote
+                    ? "rgba(245,166,35,0.8)"
+                    : isTodayDot
+                      ? "rgba(70,200,110,0.6)"
+                      : "rgba(255,255,255,0.12)",
+                  boxShadow: hasNote ? "0 0 6px rgba(245,166,35,0.5)" : "none",
+                  transition: "all 0.3s",
+                }} />
+                <span style={{
+                  fontFamily: FONT_MONO, fontSize: 8, letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: isTodayDot ? "rgba(70,200,110,0.6)" : "rgba(232,213,183,0.25)",
+                }}>
+                  {DAY_SHORT[day.getDay()]}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer hint */}
+        <p style={{
+          textAlign: "center", marginTop: 36,
+          fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.15em",
+          color: "rgba(232,213,183,0.15)",
+        }}>
+          · notes auto-save to your browser · navigate weeks with the arrows ·
+        </p>
+
+      </div>
+    </div>
+  );
+}
