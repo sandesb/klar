@@ -5,6 +5,10 @@ import { Groq } from 'groq-sdk'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const groqApiKey = env.GROQ_API_KEY || env.groq || process.env.GROQ_API_KEY || process.env.groq
+  const supabaseUrl = env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const supabaseKey =
+    env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY
 
   return {
     plugins: [
@@ -110,6 +114,150 @@ export default defineConfig(({ mode }) => {
                 res.statusCode = 500
                 res.setHeader('Content-Type', 'application/json')
                 res.end(JSON.stringify({ error: 'Groq highlights failed' }))
+              }
+            })
+          })
+
+          server.middlewares.use('/api/chat', async (req, res) => {
+            // CORS (for live deployments where the client/origin differs)
+            const origin = req.headers.origin || '*'
+            res.setHeader('Access-Control-Allow-Origin', origin)
+            res.setHeader('Vary', 'Origin')
+            res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            res.setHeader(
+              'Access-Control-Allow-Headers',
+              'Content-Type, Authorization, X-Requested-With'
+            )
+            res.setHeader('Access-Control-Max-Age', '86400')
+
+            if (req.method === 'OPTIONS') {
+              res.statusCode = 204
+              res.end()
+              return
+            }
+
+            if (req.method !== 'POST') {
+              res.statusCode = 405
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: 'Method Not Allowed' }))
+              return
+            }
+
+            if (!groqApiKey) {
+              res.statusCode = 500
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: 'Missing Groq API key in .env (GROQ_API_KEY or groq)' }))
+              return
+            }
+            if (!supabaseUrl || !supabaseKey) {
+              res.statusCode = 500
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: 'Missing Supabase env vars (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY)' }))
+              return
+            }
+
+            let body = ''
+            req.on('data', (chunk) => { body += chunk })
+            req.on('end', async () => {
+              try {
+                const parsed = JSON.parse(body || '{}')
+                const userMessage = parsed.userMessage
+                const messages = Array.isArray(parsed.messages) ? parsed.messages : []
+                const weekStartKey = parsed.weekStartKey
+                const weekEndKey = parsed.weekEndKey
+
+                if (!userMessage || typeof userMessage !== 'string') {
+                  res.statusCode = 400
+                  res.setHeader('Content-Type', 'application/json')
+                  res.end(JSON.stringify({ error: 'Missing `userMessage`' }))
+                  return
+                }
+                if (!weekStartKey || !weekEndKey) {
+                  res.statusCode = 400
+                  res.setHeader('Content-Type', 'application/json')
+                  res.end(JSON.stringify({ error: 'Missing `weekStartKey` or `weekEndKey`' }))
+                  return
+                }
+
+                // Fetch notes from Supabase for the week range
+                const restUrl = `${supabaseUrl}/rest/v1/klary_notes?select=date_key,note_text,highlights&date_key=gte.${encodeURIComponent(
+                  weekStartKey
+                )}&date_key=lte.${encodeURIComponent(weekEndKey)}`
+
+                const notesRes = await fetch(restUrl, {
+                  method: 'GET',
+                  headers: {
+                    apikey: supabaseKey,
+                    Authorization: `Bearer ${supabaseKey}`,
+                    'Content-Type': 'application/json',
+                  },
+                })
+
+                if (!notesRes.ok) {
+                  const t = await notesRes.text().catch(() => '')
+                  res.statusCode = 500
+                  res.setHeader('Content-Type', 'application/json')
+                  res.end(JSON.stringify({ error: 'Failed to fetch klary_notes', details: t || undefined }))
+                  return
+                }
+
+                const notesRows = await notesRes.json()
+
+                const kbLines = []
+                kbLines.push('Klary Notes Knowledge Base (per-day):')
+                for (const row of notesRows || []) {
+                  const dateKey = row.date_key
+                  const noteText = typeof row.note_text === 'string' ? row.note_text : ''
+                  const highlights = row.highlights ?? null
+                  kbLines.push('')
+                  kbLines.push(`Day ${dateKey}:`)
+                  kbLines.push(`note_text: ${noteText ? (noteText.length > 2200 ? noteText.slice(0, 2200) + '…' : noteText) : '(empty)'}`)
+                  kbLines.push(`highlights: ${highlights ? JSON.stringify(highlights).slice(0, 1600) : 'null'}`)
+                }
+
+                kbLines.push('')
+                kbLines.push('Use this knowledge base when the user asks about what happened in the notes.')
+                kbLines.push('If a question is general and not related to the notes, answer normally.')
+
+                const systemPrompt = [
+                  'You are the Klary Notes assistant.',
+                  'Primary goal: answer questions about the user’s Klar’y journal notes using the provided Knowledge Base.',
+                  'When asked about whether something happened every day (e.g., cold showers), check per-day evidence from KB.',
+                  'Be explicit: mention which days match (date_key) and whether each item is done.',
+                  'If the user asks about minutes/times, use highlights if present; otherwise infer from note_text.',
+                  '',
+                  kbLines.join('\n'),
+                ].join('\n')
+
+                const groq = new Groq({ apiKey: groqApiKey })
+                const groqMessages = [
+                  { role: 'system', content: systemPrompt },
+                  ...messages.map((m) => ({
+                    role: m.role === 'assistant' ? 'assistant' : 'user',
+                    content: String(m.content ?? ''),
+                  })),
+                  { role: 'user', content: userMessage },
+                ]
+
+                const completion = await groq.chat.completions.create({
+                  model: 'openai/gpt-oss-120b',
+                  messages: groqMessages,
+                  temperature: 0.6,
+                  max_completion_tokens: 900,
+                  top_p: 1,
+                  stream: false,
+                  reasoning_effort: 'medium',
+                })
+
+                const answer = completion?.choices?.[0]?.message?.content ?? ''
+
+                res.statusCode = 200
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ answer }))
+              } catch (e) {
+                res.statusCode = 500
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ error: 'Chat failed', details: String(e?.message || e) }))
               }
             })
           })

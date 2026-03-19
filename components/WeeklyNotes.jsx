@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send } from "lucide-react";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
+import { fetchChatCompletion } from "../utils/groqChat.js";
 const FONT_MONO = "'DM Mono', monospace";
 const FONT_SERIF = "'Playfair Display', serif";
 
@@ -721,6 +722,13 @@ export default function WeeklyNotes() {
   const days = getWeekDays(weekStart);
   const todayKey = toDateKey(today);
   const isCurrentWeek = toDateKey(weekStart) === toDateKey(startOfWeek(today));
+  const weekEndKey = toDateKey(new Date(weekStart.getTime() + 6 * 86400000));
+
+  // ── Chat UI state ─────────────────────────────────────────────
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState([]); // { role: "user" | "assistant", content: string }
+  const [chatBusy, setChatBusy] = useState(false);
 
   // Fetch notes for the current week from Supabase
   useEffect(() => {
@@ -746,6 +754,48 @@ export default function WeeklyNotes() {
       [dateKey]: { ...prev[dateKey], note_text: noteText },
     }));
   }
+
+  const chatListRef = useRef(null);
+
+  async function sendChat() {
+    const text = chatInput.trim();
+    if (!text || chatBusy) return;
+
+    const userMsg = { role: "user", content: text };
+    const history = [...chatMessages, userMsg];
+
+    setChatInput("");
+    setChatMessages(history);
+    setChatBusy(true);
+
+    try {
+      const answer = await fetchChatCompletion({
+        userMessage: text,
+        messages: chatMessages, // keep history *before* this user message
+        weekStartKey: toDateKey(weekStart),
+        weekEndKey,
+      });
+
+      setChatMessages([...history, { role: "assistant", content: answer || "No answer returned." }]);
+    } catch (e) {
+      setChatMessages([
+        ...history,
+        { role: "assistant", content: "Could not reach the chat service. Try again later." },
+      ]);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!chatOpen) return;
+    const el = chatListRef.current;
+    if (!el) return;
+    // Defer to let DOM paint
+    setTimeout(() => {
+      el.scrollTop = el.scrollHeight;
+    }, 0);
+  }, [chatOpen, chatMessages, chatBusy]);
 
   function prevWeek() {
     setWeekStart(prev => {
@@ -989,6 +1039,205 @@ export default function WeeklyNotes() {
         }}>
           · notes sync to cloud · navigate weeks with the arrows ·
         </p>
+
+        {/* Chat trigger (bottom-left, sticky) */}
+        {!chatOpen && (
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            style={{
+              position: "fixed",
+              bottom: 18,
+              left: 18,
+              zIndex: 4000,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              background: "rgba(26,14,0,0.92)",
+              border: "1px solid rgba(245,166,35,0.25)",
+              color: "#e8d5b7",
+              borderRadius: 16,
+              padding: "12px 14px",
+              cursor: "pointer",
+              boxShadow: "0 18px 48px rgba(0,0,0,0.45)",
+              fontFamily: FONT_MONO,
+            }}
+            title="Chat with your notes"
+          >
+            <MessageSquare size={16} color="rgba(245,166,35,0.8)" />
+            <span style={{ fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase" }}>Chat</span>
+          </button>
+        )}
+
+        {/* Chat popup */}
+        {chatOpen && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: 18,
+              left: 18,
+              zIndex: 4000,
+              width: "min(420px, 92vw)",
+              height: "70vh",
+              background: "rgba(26,14,0,0.92)",
+              border: "1px solid rgba(245,166,35,0.25)",
+              borderRadius: 18,
+              boxShadow: "0 22px 64px rgba(0,0,0,0.55)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "12px 14px",
+                borderBottom: "1px solid rgba(255,255,255,0.08)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <MessageSquare size={16} color="rgba(245,166,35,0.85)" />
+                <div style={{ fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(232,213,183,0.9)" }}>
+                  Klar'y Chat
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChatOpen(false)}
+                style={{
+                  background: "transparent",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  color: "rgba(232,213,183,0.7)",
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontFamily: FONT_MONO,
+                  fontSize: 12,
+                }}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div
+              ref={chatListRef}
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "12px 12px 6px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              {chatMessages.length === 0 ? (
+                <div style={{ color: "rgba(232,213,183,0.45)", fontFamily: FONT_MONO, fontSize: 12, lineHeight: 1.6 }}>
+                  Ask about your week notes.
+                  <div style={{ marginTop: 8, color: "rgba(245,166,35,0.55)" }}>
+                    Example: “Did you do cold showers everyday this week?”
+                  </div>
+                </div>
+              ) : null}
+              {chatMessages.map((m, idx) => {
+                const isUser = m.role === "user";
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      alignSelf: isUser ? "flex-end" : "flex-start",
+                      maxWidth: "92%",
+                      background: isUser ? "rgba(245,166,35,0.12)" : "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 14,
+                      padding: "10px 12px",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      fontFamily: FONT_MONO,
+                      fontSize: 12.5,
+                      lineHeight: 1.65,
+                      color: "rgba(232,213,183,0.85)",
+                    }}
+                  >
+                    {m.content}
+                  </div>
+                );
+              })}
+              {chatBusy ? (
+                <div style={{ alignSelf: "flex-start", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "10px 12px", fontFamily: FONT_MONO, fontSize: 12.5, color: "rgba(232,213,183,0.6)" }}>
+                  Thinking…
+                </div>
+              ) : null}
+            </div>
+
+            <div
+              style={{
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+                padding: 12,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              <textarea
+                rows={2}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendChat();
+                  }
+                }}
+                placeholder="Ask about your notes…"
+                style={{
+                  width: "100%",
+                  resize: "none",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(245,166,35,0.18)",
+                  borderRadius: 14,
+                  padding: "10px 12px",
+                  color: "#e8d5b7",
+                  fontFamily: FONT_MONO,
+                  fontSize: 13,
+                  outline: "none",
+                  lineHeight: 1.5,
+                }}
+              />
+
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={sendChat}
+                  disabled={chatBusy || chatInput.trim() === ""}
+                  style={{
+                    flex: 1,
+                    background: chatBusy || chatInput.trim() === "" ? "rgba(255,255,255,0.05)" : "rgba(245,166,35,0.15)",
+                    border: "1px solid rgba(245,166,35,0.35)",
+                    color: "rgba(232,213,183,0.85)",
+                    borderRadius: 14,
+                    padding: "10px 12px",
+                    cursor: chatBusy || chatInput.trim() === "" ? "not-allowed" : "pointer",
+                    fontFamily: FONT_MONO,
+                    fontSize: 12.5,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Send size={14} color="rgba(245,166,35,0.85)" />
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>
