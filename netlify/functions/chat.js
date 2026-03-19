@@ -1,5 +1,49 @@
 const { Groq } = require("groq-sdk");
 
+// ── Prompt cache (module-level, warm between invocations) ─────────
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const promptCache = new Map(); // key -> { text, fetchedAt }
+
+const CHAT_SYSTEM_FALLBACK = [
+  "You are Sandy — a casual, self-aware alternate self of the user, replying like a friend who read their diary.",
+  "Use the Knowledge Base to answer questions about the journal notes.",
+  "Rules:",
+  "- Keep replies SHORT (under 60 words) unless the user asks to elaborate or requests a list/table.",
+  "- Use proper markdown: bullet lists must have EACH item on its own line starting with `-` or `*`.",
+  "- For tables, use proper markdown table syntax (| Col | Col | with a separator row).",
+  "- Never use 'Evidence:', raw date_key strings, or ASCII pipe-based tables that aren't real markdown.",
+  "- Reference dates naturally: 'Sunday', 'Mar 15', 'Monday'. Don't show date_key like '2026-03-15'.",
+  "- No verbose disclaimers or bot-like preamble.",
+].join("\n");
+
+async function getPrompt(key, supabaseUrl, supabaseKey, fallback) {
+  const cached = promptCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.text;
+  }
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/klary_prompts?select=prompt_text&key=eq.${encodeURIComponent(key)}&limit=1`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      const text = rows?.[0]?.prompt_text;
+      if (text) {
+        promptCache.set(key, { text, fetchedAt: Date.now() });
+        return text;
+      }
+    }
+  } catch {}
+  return fallback;
+}
+
 function cors(res, origin = "*") {
   res.headers = {
     ...res.headers,
@@ -168,19 +212,8 @@ exports.handler = async function handler(event) {
     const notesRows = await notesRes.json();
     const kb = buildKnowledgeBase(notesRows || []);
 
-    const systemPrompt = [
-      "You are Sandy — a casual, self-aware alternate self of the user, replying like a friend who read their diary.",
-      "Use the Knowledge Base to answer questions about the journal notes.",
-      "Rules:",
-      "- Keep replies SHORT (under 60 words) unless the user asks to elaborate or requests a list/table.",
-      "- Use proper markdown: bullet lists must have EACH item on its own line starting with `-` or `*`.",
-      "- For tables, use proper markdown table syntax (| Col | Col | with a separator row).",
-      "- Never use 'Evidence:', raw date_key strings, or ASCII pipe-based tables that aren't real markdown.",
-      "- Reference dates naturally: 'Sunday', 'Mar 15', 'Monday'. Don't show date_key like '2026-03-15'.",
-      "- No verbose disclaimers or bot-like preamble.",
-      "",
-      kb,
-    ].join("\n");
+    const basePrompt = await getPrompt("chat_system", supabaseUrl, supabaseKey, CHAT_SYSTEM_FALLBACK);
+    const systemPrompt = `${basePrompt}\n\n${kb}`;
 
     // Build messages: system + conversation history + current question (+ optional images)
     const userContentParts = [
@@ -190,18 +223,18 @@ exports.handler = async function handler(event) {
         .map((img) => ({ type: "image_url", image_url: { url: img } })),
     ];
 
+    const groq = new Groq({ apiKey: groqApiKey });
+
+    const hasImages = userContentParts.length > 1;
+
     const groqMessages = [
       { role: "system", content: systemPrompt },
       ...messages.map((m) => ({
         role: m.role === "assistant" ? "assistant" : "user",
         content: String(m.content ?? ""),
       })),
-      { role: "user", content: userContentParts },
+      { role: "user", content: hasImages ? userContentParts : userMessage },
     ];
-
-    const groq = new Groq({ apiKey: groqApiKey });
-
-    const hasImages = userContentParts.length > 1;
     const completion = await groq.chat.completions.create({
       model: hasImages ? "meta-llama/llama-4-scout-17b-16e-instruct" : "openai/gpt-oss-120b",
       messages: groqMessages,

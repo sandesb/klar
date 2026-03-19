@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { CalendarRange,CalendarArrowDown,  Lock, LockOpen, CalendarMinus, CalendarPlus, CalendarHeart, RefreshCw } from "lucide-react";
 
 import WorkingDaysDialog from "./components/WorkingDaysDialog.jsx";
@@ -36,6 +37,7 @@ function buildADCells(year, monthIdx) {
 }
 
 export default function Calendar2026({ lockedRange, onLockRange }) {
+  const navigate = useNavigate();
   const [startInput, setStartInput] = useState("");
   const [endInput, setEndInput] = useState("");
   const [rangeStart, setRangeStart] = useState(null);
@@ -531,6 +533,8 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
       <div style={{ textAlign: "center", marginBottom: "32px" }}>
       <h1
           className="brand-title"
+          onDoubleClick={() => navigate("/note")}
+          title="Double-click to open notes"
           style={{
           fontFamily: "'Playfair Display', serif",
           fontSize: "clamp(48px,8vw,90px)",
@@ -539,6 +543,8 @@ export default function Calendar2026({ lockedRange, onLockRange }) {
             letterSpacing: "0.04em",
             lineHeight: 1,
             textShadow: "0 10px 60px rgba(115, 114, 117, 0.73)",
+            cursor: "default",
+            userSelect: "none",
           }}
         >
           Klar

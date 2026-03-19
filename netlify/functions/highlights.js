@@ -8,13 +8,81 @@ function safeJsonStringify(x) {
   }
 }
 
+// ── Prompt cache (module-level, warm between invocations) ─────────
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const promptCache = new Map(); // key -> { text, fetchedAt }
+
+const HIGHLIGHTS_FALLBACK = [
+  "You are an assistant that extracts structured highlights from a daily journal note.",
+  "",
+  "Return ONLY valid JSON (no markdown, no backticks).",
+  "Schema:",
+  "{",
+  '  "literal_bullets": string[],',
+  '  "checks": {',
+  '    "cold_shower": { "done": boolean, "evidence": string|null },',
+  '    "morning_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
+  '    "gym": { "done": boolean, "minutes": number|null, "body_parts": string[], "evidence": string|null },',
+  '    "evening_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
+  '    "special_incidents": string[]',
+  "  }",
+  "}",
+  "",
+  "Rules:",
+  "- If something is not mentioned, set done=false and minutes=null.",
+  '- Interpret "1 hr", "one hour" as 60 minutes, "15 minutes" as 15, etc.',
+  '- "morning_meditation": if the note implies it happened after cold shower in the morning, mark done=true and set minutes.',
+  '- "evening_meditation": if meditation is mentioned later in the day, set done and minutes accordingly.',
+  '- For gym, if body parts are mentioned, put them into "body_parts" (e.g. ["forearms","triceps"]).',
+  '- "special_incidents" should include unusual events, messages, storms, accidents, visits, etc.',
+].join("\n");
+
+async function getPrompt(key, supabaseUrl, supabaseKey, fallback) {
+  const cached = promptCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.text;
+  }
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/klary_prompts?select=prompt_text&key=eq.${encodeURIComponent(key)}&limit=1`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      const text = rows?.[0]?.prompt_text;
+      if (text) {
+        promptCache.set(key, { text, fetchedAt: Date.now() });
+        return text;
+      }
+    }
+  } catch {}
+  return fallback;
+}
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Max-Age": "86400",
+};
+
 exports.handler = async function handler(event) {
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers: CORS_HEADERS, body: "" };
+  }
+
   try {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
       return {
         statusCode: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
         body: safeJsonStringify({ error: "Missing GROQ_API_KEY in Netlify environment variables" }),
       };
     }
@@ -31,42 +99,18 @@ exports.handler = async function handler(event) {
     if (!text || typeof text !== "string") {
       return {
         statusCode: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
         body: safeJsonStringify({ error: "Missing `text`" }),
       };
     }
 
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+
+    const systemPrompt = await getPrompt("highlights_system", supabaseUrl, supabaseKey, HIGHLIGHTS_FALLBACK);
+    const prompt = `${systemPrompt}\n\nJournal note:\n${text}`;
+
     const groq = new Groq({ apiKey });
-
-    const prompt = [
-      "You are an assistant that extracts structured highlights from a daily journal note.",
-      "",
-      "Return ONLY valid JSON (no markdown, no backticks).",
-      "Schema:",
-      "{",
-      '  "literal_bullets": string[],',
-      '  "checks": {',
-      '    "cold_shower": { "done": boolean, "evidence": string|null },',
-      '    "morning_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
-      '    "gym": { "done": boolean, "minutes": number|null, "body_parts": string[], "evidence": string|null },',
-      '    "evening_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
-      '    "special_incidents": string[]',
-      "  }",
-      "}",
-      "",
-      "Rules:",
-      "- If something is not mentioned, set done=false and minutes=null.",
-      '- Interpret "1 hr", "one hour" as 60 minutes, "15 minutes" as 15, etc.',
-      '- "morning_meditation": if the note implies it happened after cold shower in the morning, mark done=true and set minutes.',
-      '- "evening_meditation": if meditation is mentioned later in the day, set done and minutes accordingly.',
-      '- For gym, if body parts are mentioned, put them into "body_parts" (e.g. ["forearms","triceps"]).',
-      '- "special_incidents" should include unusual events, messages, storms, accidents, visits, etc.',
-      "",
-      "Journal note:",
-      text,
-    ].join("\n");
-
-    // We accumulate the stream server-side and return one final JSON string.
     const chatCompletion = await groq.chat.completions.create({
       messages: [{ role: "user", content: prompt }],
       model: "openai/gpt-oss-120b",
@@ -86,6 +130,7 @@ exports.handler = async function handler(event) {
     return {
       statusCode: 200,
       headers: {
+        ...CORS_HEADERS,
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
       },
@@ -99,4 +144,3 @@ exports.handler = async function handler(event) {
     };
   }
 };
-

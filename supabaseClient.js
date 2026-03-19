@@ -61,3 +61,20 @@ export async function supabaseDelete(table, filters) {
   });
   if (!res.ok) throw new Error(`Supabase DELETE ${table} failed: ${res.status}`);
 }
+
+// ── Prompt management ────────────────────────────────────────────
+
+export async function fetchAllPrompts() {
+  const url = `${restUrl("klary_prompts")}?select=key,type,label,prompt_text,updated_at&order=type.asc,key.asc`;
+  const res = await fetch(url, { headers: headers() });
+  if (!res.ok) throw new Error(`Supabase SELECT klary_prompts failed: ${res.status}`);
+  return res.json(); // [{ key, type, label, prompt_text, updated_at }]
+}
+
+export async function upsertPrompt(key, type, label, promptText) {
+  return supabaseUpsert(
+    "klary_prompts",
+    { key, type, label, prompt_text: promptText, updated_at: new Date().toISOString() },
+    "key"
+  );
+}

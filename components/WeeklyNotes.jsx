@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
 import { fetchChatCompletion } from "../utils/groqChat.js";
+import { fetchAllPrompts, upsertPrompt } from "../supabaseClient.js";
 import { transcribeAudio } from "../utils/groqTranscribe.js";
 import { speak, stopSpeaking, unlockAudio } from "../utils/groqTts.js";
 const FONT_MONO = "'DM Mono', monospace";
@@ -194,7 +196,7 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
     debouncedSave(key, val);
   }
 
-  async function runHighlights() {
+  async function runHighlights(force = false) {
     if (!hasNote) return;
     if (!isActive) onClick();
     setIsEditing(false);
@@ -202,9 +204,23 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
     setHighlightsErr("");
     setHighlightsRaw("");
 
-    // Use existing highlights from Supabase if available
-    if (highlightsData) {
+    // Use cached highlights unless force-refresh was requested
+    if (highlightsData && !force) {
       return;
+    }
+
+    if (force && highlightsData) {
+      setHighlightsData(null); // clear stale data so UI shows fresh loading state
+      toast("Refreshing highlights…", {
+        style: {
+          background: "#1a0e00",
+          color: "#e8d5b7",
+          border: "1px solid rgba(245,166,35,0.25)",
+          fontFamily: "'DM Mono', monospace",
+          fontSize: "12px",
+          letterSpacing: "0.05em",
+        },
+      });
     }
 
     abortRef.current?.abort?.();
@@ -333,8 +349,9 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
             </span>
             <button
               type="button"
-              title="Generate highlights"
+              title={highlightsData ? "Double-click to refresh highlights" : "Generate highlights"}
               onClick={(e) => { e.stopPropagation(); runHighlights(); }}
+              onDoubleClick={(e) => { e.stopPropagation(); runHighlights(true); }}
               disabled={!hasNote || highlightsLoading}
               style={{
                 display: "inline-flex",
@@ -588,7 +605,9 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                   </button>
                   <button
                     type="button"
+                    title={highlightsData ? "Double-click to refresh highlights" : "Generate highlights"}
                     onClick={() => runHighlights()}
+                    onDoubleClick={(e) => { e.stopPropagation(); runHighlights(true); }}
                     style={{
                       background: panel === "highlights" ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.03)",
                       border: panel === "highlights" ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(255,255,255,0.08)",
@@ -856,6 +875,7 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
 }
 
 export default function WeeklyNotes() {
+  const navigate = useNavigate();
   const today = new Date();
   today.setHours(0,0,0,0);
 
@@ -878,6 +898,47 @@ export default function WeeklyNotes() {
   const [chatImageReading, setChatImageReading] = useState(false);
   const [chatAnalyzingImages, setChatAnalyzingImages] = useState(false);
   const fileInputRef = useRef(null);
+
+  // ── Prompt manager ─────────────────────────────────────────────
+  const [promptMgrOpen, setPromptMgrOpen] = useState(false);
+  const [promptRows, setPromptRows] = useState([]); // raw rows from Supabase
+  const [promptDrafts, setPromptDrafts] = useState({}); // key -> edited text
+  const [promptsLoading, setPromptsLoading] = useState(false);
+  const [promptsSaving, setPromptsSaving] = useState({}); // key -> bool
+
+  async function openPromptMgr() {
+    setPromptMgrOpen(true);
+    setPromptsLoading(true);
+    try {
+      const rows = await fetchAllPrompts();
+      setPromptRows(rows || []);
+      const drafts = {};
+      (rows || []).forEach((r) => { drafts[r.key] = r.prompt_text; });
+      setPromptDrafts(drafts);
+    } catch {
+      toast.error("Could not load prompts from Supabase.");
+    } finally {
+      setPromptsLoading(false);
+    }
+  }
+
+  async function savePrompt(row) {
+    setPromptsSaving((p) => ({ ...p, [row.key]: true }));
+    try {
+      await upsertPrompt(row.key, row.type, row.label, promptDrafts[row.key] ?? row.prompt_text);
+      toast("Prompt saved ✦", {
+        style: {
+          background: "#1a0e00", color: "#e8d5b7",
+          border: "1px solid rgba(245,166,35,0.35)",
+          fontFamily: "'DM Mono', monospace", fontSize: "12px", letterSpacing: "0.05em",
+        },
+      });
+    } catch {
+      toast.error("Failed to save prompt.");
+    } finally {
+      setPromptsSaving((p) => ({ ...p, [row.key]: false }));
+    }
+  }
 
   // ── Speaker (auto-TTS) toggle ──────────────────────────────────
   const [speakerOn, setSpeakerOn] = useState(false);
@@ -1130,11 +1191,17 @@ export default function WeeklyNotes() {
               Weekly Notes
             </span>
           </div>
-          <h1 style={{
-            fontFamily: FONT_SERIF, fontSize: 52, fontWeight: 400,
-            color: "#e8d5b7", margin: "0 0 10px",
-            letterSpacing: "-0.5px", lineHeight: 1.1,
-          }}>
+          <h1
+            onClick={() => navigate("/")}
+            title="Go to home"
+            style={{
+              fontFamily: FONT_SERIF, fontSize: 52, fontWeight: 400,
+              color: "#e8d5b7", margin: "0 0 10px",
+              letterSpacing: "-0.5px", lineHeight: 1.1,
+              cursor: "pointer",
+              userSelect: "none",
+            }}
+          >
             Klar<span style={{ color: "rgba(237,135,19,0.9)", fontStyle: "italic" }}>'</span>y
           </h1>
           <p style={{
@@ -1379,23 +1446,46 @@ export default function WeeklyNotes() {
                   Klar'y Chat
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setChatOpen(false)}
-                style={{
-                  background: "transparent",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  color: "rgba(232,213,183,0.7)",
-                  borderRadius: 10,
-                  padding: "6px 10px",
-                  cursor: "pointer",
-                  fontFamily: FONT_MONO,
-                  fontSize: 12,
-                }}
-                title="Close"
-              >
-                ✕
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {/* Prompt manager button */}
+                <button
+                  type="button"
+                  title="Prompt Manager"
+                  onClick={openPromptMgr}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "rgba(232,213,183,0.45)",
+                    borderRadius: 10,
+                    padding: "6px 8px",
+                    cursor: "pointer",
+                    display: "flex", alignItems: "center",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,166,35,0.4)"; e.currentTarget.style.color = "rgba(245,166,35,0.8)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "rgba(232,213,183,0.45)"; }}
+                >
+                  <Settings size={13} />
+                </button>
+                {/* Close button */}
+                <button
+                  type="button"
+                  onClick={() => setChatOpen(false)}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    color: "rgba(232,213,183,0.7)",
+                    borderRadius: 10,
+                    padding: "6px 10px",
+                    cursor: "pointer",
+                    fontFamily: FONT_MONO,
+                    fontSize: 12,
+                  }}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <div
@@ -1672,6 +1762,141 @@ export default function WeeklyNotes() {
         )}
 
       </div>
+
+      {/* ── Prompt Manager Dialog ─────────────────────────────── */}
+      {promptMgrOpen && (
+        <div
+          onClick={() => setPromptMgrOpen(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 2000,
+            background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: "min(620px, 96vw)",
+              maxHeight: "88vh",
+              background: "rgba(20,11,2,0.97)",
+              border: "1px solid rgba(245,166,35,0.28)",
+              borderRadius: 20,
+              boxShadow: "0 24px 72px rgba(0,0,0,0.65)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "16px 20px",
+              borderBottom: "1px solid rgba(255,255,255,0.07)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Settings size={15} color="rgba(245,166,35,0.8)" />
+                <span style={{ fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(232,213,183,0.9)" }}>
+                  Prompt Manager
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPromptMgrOpen(false)}
+                style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(232,213,183,0.6)", borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontFamily: FONT_MONO, fontSize: 12 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 24 }}>
+              {promptsLoading ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, color: "rgba(232,213,183,0.45)", fontFamily: FONT_MONO, fontSize: 12 }}>
+                  <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> Loading prompts…
+                </div>
+              ) : promptRows.length === 0 ? (
+                <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: "rgba(232,213,183,0.4)", lineHeight: 1.7 }}>
+                  No prompts found in Supabase.<br />
+                  <span style={{ color: "rgba(245,166,35,0.6)" }}>Run the SQL seed to insert the default rows.</span>
+                </div>
+              ) : (
+                promptRows.map((row) => (
+                  <div key={row.key} style={{
+                    background: "rgba(255,255,255,0.02)",
+                    border: "1px solid rgba(245,166,35,0.12)",
+                    borderRadius: 14,
+                    padding: "16px 18px",
+                  }}>
+                    {/* Row header */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(245,166,35,0.75)", background: "rgba(245,166,35,0.09)", border: "1px solid rgba(245,166,35,0.2)", borderRadius: 999, padding: "2px 8px" }}>
+                        {row.type}
+                      </span>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: "rgba(232,213,183,0.85)", fontWeight: 500 }}>
+                        {row.label}
+                      </span>
+                    </div>
+                    {row.type === "highlights" && (
+                      <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: "rgba(245,166,35,0.55)", marginBottom: 8, letterSpacing: "0.06em" }}>
+                        ⚠ Keep the JSON schema section intact — only edit the Rules or preamble text.
+                      </div>
+                    )}
+                    <textarea
+                      value={promptDrafts[row.key] ?? row.prompt_text}
+                      onChange={e => setPromptDrafts(d => ({ ...d, [row.key]: e.target.value }))}
+                      rows={10}
+                      style={{
+                        width: "100%",
+                        resize: "vertical",
+                        background: "rgba(0,0,0,0.25)",
+                        border: "1px solid rgba(245,166,35,0.18)",
+                        borderRadius: 10,
+                        padding: "12px 14px",
+                        color: "#e8d5b7",
+                        fontFamily: FONT_MONO,
+                        fontSize: 11.5,
+                        lineHeight: 1.7,
+                        outline: "none",
+                        boxSizing: "border-box",
+                        transition: "border-color 0.2s",
+                      }}
+                      onFocus={e => { e.target.style.borderColor = "rgba(245,166,35,0.5)"; }}
+                      onBlur={e => { e.target.style.borderColor = "rgba(245,166,35,0.18)"; }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => savePrompt(row)}
+                        disabled={promptsSaving[row.key]}
+                        style={{
+                          background: promptsSaving[row.key] ? "rgba(245,166,35,0.07)" : "rgba(245,166,35,0.15)",
+                          border: "1px solid rgba(245,166,35,0.4)",
+                          color: "#e8d5b7",
+                          borderRadius: 10,
+                          padding: "7px 18px",
+                          cursor: promptsSaving[row.key] ? "not-allowed" : "pointer",
+                          fontFamily: FONT_MONO,
+                          fontSize: 11,
+                          letterSpacing: "0.08em",
+                          display: "flex", alignItems: "center", gap: 6,
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {promptsSaving[row.key] ? <><Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> Saving…</> : "Save to Supabase"}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,0.06)", fontFamily: FONT_MONO, fontSize: 9.5, letterSpacing: "0.07em", color: "rgba(232,213,183,0.3)" }}>
+              Changes take effect within 5 minutes (TTL cache). Prompts are fetched server-side.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

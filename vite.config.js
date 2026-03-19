@@ -2,6 +2,73 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { Groq } from 'groq-sdk'
 
+// ── Dev-server prompt cache (module-level, persists across hot-reload) ─
+const CACHE_TTL_MS = 5 * 60 * 1000
+const devPromptCache = new Map() // key -> { text, fetchedAt }
+
+async function getDevPrompt(key, supabaseUrl, supabaseKey, fallback) {
+  const cached = devPromptCache.get(key)
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.text
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/klary_prompts?select=prompt_text&key=eq.${encodeURIComponent(key)}&limit=1`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+    if (res.ok) {
+      const rows = await res.json()
+      const text = rows?.[0]?.prompt_text
+      if (text) {
+        devPromptCache.set(key, { text, fetchedAt: Date.now() })
+        return text
+      }
+    }
+  } catch {}
+  return fallback
+}
+
+const HIGHLIGHTS_FALLBACK = [
+  'You are an assistant that extracts structured highlights from a daily journal note.',
+  '',
+  'Return ONLY valid JSON (no markdown, no backticks).',
+  'Schema:',
+  '{',
+  '  "literal_bullets": string[],',
+  '  "checks": {',
+  '    "cold_shower": { "done": boolean, "evidence": string|null },',
+  '    "morning_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
+  '    "gym": { "done": boolean, "minutes": number|null, "body_parts": string[], "evidence": string|null },',
+  '    "evening_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
+  '    "special_incidents": string[]',
+  '  }',
+  '}',
+  '',
+  'Rules:',
+  '- If something is not mentioned, set done=false and minutes=null.',
+  '- Interpret "1 hr", "one hour" as 60 minutes, "15 minutes" as 15, etc.',
+  '- "morning_meditation": if the note implies it happened after cold shower in the morning, mark done=true and set minutes.',
+  '- "evening_meditation": if meditation is mentioned later in the day, set done and minutes accordingly.',
+  '- For gym, if body parts are mentioned, put them into "body_parts" (e.g. ["forearms","triceps"]).',
+  '- "special_incidents" should include unusual events, messages, storms, accidents, visits, etc.',
+].join('\n')
+
+const CHAT_SYSTEM_FALLBACK = [
+  'You are Sandy — a casual, self-aware alternate self of the user, replying like a friend who read their diary.',
+  'Use the Knowledge Base to answer questions about the journal notes.',
+  'Rules:',
+  '- Keep replies SHORT (under 60 words) unless the user asks to elaborate or requests a list/table.',
+  '- Use proper markdown: bullet lists must have EACH item on its own line starting with `-` or `*`.',
+  '- For tables, use proper markdown table syntax (| Col | Col | with a separator row).',
+  "- Never use 'Evidence:', raw date_key strings, or ASCII pipe-based tables that aren't real markdown.",
+  "- Reference dates naturally: 'Sunday', 'Mar 15', 'Monday'. Don't show date_key like '2026-03-15'.",
+  '- No verbose disclaimers or bot-like preamble.',
+].join('\n')
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const groqApiKey = env.GROQ_API_KEY || env.groq || process.env.GROQ_API_KEY || process.env.groq
@@ -67,33 +134,8 @@ export default defineConfig(({ mode }) => {
 
                 const groq = new Groq({ apiKey: groqApiKey })
 
-                const prompt = [
-                  'You are an assistant that extracts structured highlights from a daily journal note.',
-                  '',
-                  'Return ONLY valid JSON (no markdown, no backticks).',
-                  'Schema:',
-                  '{',
-                  '  "literal_bullets": string[],',
-                  '  "checks": {',
-                  '    "cold_shower": { "done": boolean, "evidence": string|null },',
-                  '    "morning_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
-                  '    "gym": { "done": boolean, "minutes": number|null, "body_parts": string[], "evidence": string|null },',
-                  '    "evening_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
-                  '    "special_incidents": string[]',
-                  '  }',
-                  '}',
-                  '',
-                  'Rules:',
-                  '- If something is not mentioned, set done=false and minutes=null.',
-                  '- Interpret "1 hr", "one hour" as 60 minutes, "15 minutes" as 15, etc.',
-                  '- "morning_meditation": if the note implies it happened after cold shower in the morning, mark done=true and set minutes.',
-                  '- "evening_meditation": if meditation is mentioned later in the day, set done and minutes accordingly.',
-                  '- For gym, if body parts are mentioned, put them into "body_parts" (e.g. ["forearms","triceps"]).',
-                  '- "special_incidents" should include unusual events, messages, storms, accidents, visits, etc.',
-                  '',
-                  'Journal note:',
-                  text,
-                ].join('\n')
+                const systemPromptBase = await getDevPrompt('highlights_system', supabaseUrl, supabaseKey, HIGHLIGHTS_FALLBACK)
+                const prompt = `${systemPromptBase}\n\nJournal note:\n${text}`
 
                 const chatCompletion = await groq.chat.completions.create({
                   messages: [{ role: 'user', content: prompt }],
@@ -220,19 +262,8 @@ export default defineConfig(({ mode }) => {
                 kbLines.push('Use this knowledge base when the user asks about what happened in the notes.')
                 kbLines.push('If a question is general and not related to the notes, answer normally.')
 
-                const systemPrompt = [
-                  "You are Sandy — a casual, self-aware alternate self of the user, replying like a friend who read their diary.",
-                  "Use the Knowledge Base to answer questions about the journal notes.",
-                  "Rules:",
-                  "- Keep replies SHORT (under 60 words) unless the user asks to elaborate or requests a list/table.",
-                  "- Use proper markdown: bullet lists must have EACH item on its own line starting with `-` or `*`.",
-                  "- For tables, use proper markdown table syntax (| Col | Col | with a separator row).",
-                  "- Never use 'Evidence:', raw date_key strings, or ASCII pipe-based tables that aren't real markdown.",
-                  "- Reference dates naturally: 'Sunday', 'Mar 15', 'Monday'. Don't show date_key like '2026-03-15'.",
-                  "- No verbose disclaimers or bot-like preamble.",
-                  '',
-                  kbLines.join('\n'),
-                ].join('\n')
+                const chatBase = await getDevPrompt('chat_system', supabaseUrl, supabaseKey, CHAT_SYSTEM_FALLBACK)
+                const systemPrompt = `${chatBase}\n\n${kbLines.join('\n')}`
 
                 const groq = new Groq({ apiKey: groqApiKey })
                 const userContentParts = [
@@ -242,16 +273,16 @@ export default defineConfig(({ mode }) => {
                     .map((img) => ({ type: 'image_url', image_url: { url: img } })),
                 ]
 
+                const hasImages = userContentParts.length > 1
+
                 const groqMessages = [
                   { role: 'system', content: systemPrompt },
                   ...messages.map((m) => ({
                     role: m.role === 'assistant' ? 'assistant' : 'user',
                     content: String(m.content ?? ''),
                   })),
-                  { role: 'user', content: userContentParts },
+                  { role: 'user', content: hasImages ? userContentParts : userMessage },
                 ]
-
-                const hasImages = userContentParts.length > 1
                 const completion = await groq.chat.completions.create({
                   model: hasImages ? 'meta-llama/llama-4-scout-17b-16e-instruct' : 'openai/gpt-oss-120b',
                   messages: groqMessages,
