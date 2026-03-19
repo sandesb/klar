@@ -267,6 +267,54 @@ export default defineConfig(({ mode }) => {
           })
         },
       },
+      {
+        name: 'groq-transcribe-api',
+        configureServer(server) {
+          server.middlewares.use('/api/transcribe', async (req, res) => {
+            const origin = req.headers.origin || '*'
+            res.setHeader('Access-Control-Allow-Origin', origin)
+            res.setHeader('Vary', 'Origin')
+            res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+            res.setHeader('Access-Control-Max-Age', '86400')
+
+            if (req.method === 'OPTIONS') {
+              res.statusCode = 204
+              res.end()
+              return
+            }
+
+            if (req.method !== 'POST') {
+              res.statusCode = 405
+              res.end(JSON.stringify({ error: 'Method Not Allowed' }))
+              return
+            }
+
+            try {
+              const chunks = []
+              for await (const chunk of req) chunks.push(chunk)
+              const buffer = Buffer.concat(chunks)
+              const contentType = req.headers['content-type'] || 'audio/webm'
+
+              const groq = new Groq({ apiKey: groqApiKey })
+              const transcription = await groq.audio.transcriptions.create({
+                file: new File([buffer], 'audio.webm', { type: contentType }),
+                model: 'whisper-large-v3-turbo',
+                temperature: 0,
+                response_format: 'json',
+              })
+
+              res.statusCode = 200
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ text: transcription.text ?? '' }))
+            } catch (e) {
+              res.statusCode = 500
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: 'Transcription failed', details: String(e?.message || e) }))
+            }
+          })
+        },
+      },
     ],
   }
 })

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
 import { fetchChatCompletion } from "../utils/groqChat.js";
+import { transcribeAudio } from "../utils/groqTranscribe.js";
 const FONT_MONO = "'DM Mono', monospace";
 const FONT_SERIF = "'Playfair Display', serif";
 
@@ -62,6 +63,82 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
   const [saved, setSaved] = useState(false);
   const textareaRef = useRef(null);
   const hasNote = text.trim().length > 0;
+
+  // ── Voice recording ──
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+
+      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? { mimeType: "audio/webm;codecs=opus" }
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? { mimeType: "audio/webm" }
+          : {};
+
+      const mr = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mr;
+
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      mr.onstop = async () => {
+        const mimeType = mr.mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        chunksRef.current = [];
+        setTranscribing(true);
+        try {
+          const transcribed = await transcribeAudio(blob);
+          if (transcribed) {
+            setText((prev) => {
+              const joined = prev.trim() ? `${prev.trimEnd()}\n${transcribed}` : transcribed;
+              debouncedSave(key, joined);
+              return joined;
+            });
+            toast("Voice transcribed ✦", {
+              style: {
+                background: "#1a0e00",
+                color: "#e8d5b7",
+                border: "1px solid rgba(245,166,35,0.35)",
+                fontFamily: "'DM Mono', monospace",
+                fontSize: "12px",
+                letterSpacing: "0.05em",
+              },
+            });
+          }
+        } catch (err) {
+          toast.error("Transcription failed. Check your Groq key.");
+        } finally {
+          setTranscribing(false);
+        }
+      };
+
+      mr.start(250); // collect chunks every 250 ms
+      setRecording(true);
+    } catch (err) {
+      toast.error("Microphone access denied.");
+    }
+  }
+
+  function stopRecording() {
+    mediaRecorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setRecording(false);
+  }
+
+  // Clean up on unmount / card collapse
+  useEffect(() => {
+    if (!isActive && recording) stopRecording();
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync when initial data changes (e.g. week navigation)
   useEffect(() => {
@@ -374,43 +451,105 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                 onFocus={e => { e.target.style.borderColor = "rgba(245,166,35,0.55)"; }}
                 onBlur={e => { e.target.style.borderColor = "rgba(245,166,35,0.22)"; }}
               />
+              {/* ── Voice recording bar ── */}
               <div style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                marginTop: 10,
+                display: "flex", alignItems: "center", gap: 8, marginTop: 10,
               }}>
+                {/* Record / Stop button */}
+                <button
+                  type="button"
+                  title={recording ? "Stop recording" : "Record voice note"}
+                  onClick={recording ? stopRecording : startRecording}
+                  disabled={transcribing}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    background: recording
+                      ? "rgba(220,60,60,0.13)"
+                      : "rgba(245,166,35,0.07)",
+                    border: recording
+                      ? "1px solid rgba(220,60,60,0.45)"
+                      : "1px solid rgba(245,166,35,0.22)",
+                    borderRadius: 999,
+                    padding: "5px 14px 5px 10px",
+                    cursor: transcribing ? "not-allowed" : "pointer",
+                    opacity: transcribing ? 0.55 : 1,
+                    fontFamily: FONT_MONO, fontSize: 10.5, letterSpacing: "0.09em",
+                    color: recording ? "rgba(220,100,100,0.9)" : "rgba(245,166,35,0.75)",
+                    transition: "all 0.18s",
+                    flexShrink: 0,
+                  }}
+                >
+                  {transcribing ? (
+                    <>
+                      <Loader2 size={13} style={{ animation: "spin 0.8s linear infinite" }} />
+                      Transcribing…
+                    </>
+                  ) : recording ? (
+                    <>
+                      <Square size={12} fill="rgba(220,100,100,0.85)" color="rgba(220,100,100,0.85)" style={{ animation: "mic-pulse 1s ease-in-out infinite" }} />
+                      Stop
+                    </>
+                  ) : (
+                    <>
+                      <Mic size={13} />
+                      Dictate
+                    </>
+                  )}
+                </button>
+
+                {/* Pulse ring when recording */}
+                {recording && (
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    fontFamily: FONT_MONO, fontSize: 9.5, letterSpacing: "0.08em",
+                    color: "rgba(220,100,100,0.7)",
+                  }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: "50%",
+                      background: "rgba(220,60,60,0.85)",
+                      animation: "mic-pulse 1s ease-in-out infinite",
+                      display: "inline-block",
+                    }} />
+                    Listening…
+                  </span>
+                )}
+
+                <div style={{ flex: 1 }} />
+
+                {/* Save status + Done */}
+                {saved ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: FONT_MONO, fontSize: 10, color: "rgba(70,200,110,0.7)" }}>
+                    <Check size={11} color="rgba(70,200,110,0.8)" /> Saved
+                  </span>
+                ) : text.trim() ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: FONT_MONO, fontSize: 10, color: "rgba(232,213,183,0.3)" }}>
+                    <Clock size={11} color="rgba(232,213,183,0.3)" /> Saving…
+                  </span>
+                ) : null}
+
                 <span style={{
                   fontFamily: FONT_MONO, fontSize: 10.5, letterSpacing: "0.1em",
-                  color: "rgba(232,213,183,0.3)",
+                  color: "rgba(232,213,183,0.25)",
                 }}>
-                  {wordCount} word{wordCount !== 1 ? "s" : ""}
+                  {wordCount}w
                 </span>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  {saved ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: FONT_MONO, fontSize: 10, color: "rgba(70,200,110,0.7)" }}>
-                      <Check size={11} color="rgba(70,200,110,0.8)" /> Saved
-                    </span>
-                  ) : text.trim() ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: FONT_MONO, fontSize: 10, color: "rgba(232,213,183,0.3)" }}>
-                      <Clock size={11} color="rgba(232,213,183,0.3)" /> Saving…
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(false)}
-                    style={{
-                      background: "rgba(255,255,255,0.05)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 8, padding: "5px 12px", cursor: "pointer",
-                      fontFamily: FONT_MONO, fontSize: 10.5, letterSpacing: "0.08em",
-                      color: "rgba(232,213,183,0.6)", display: "flex", alignItems: "center", gap: 5,
-                      transition: "all 0.15s",
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,166,35,0.45)"; e.currentTarget.style.color = "#e8d5b7"; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "rgba(232,213,183,0.6)"; }}
-                  >
-                    <X size={11} /> Done
-                  </button>
-                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  style={{
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 8, padding: "5px 12px", cursor: "pointer",
+                    fontFamily: FONT_MONO, fontSize: 10.5, letterSpacing: "0.08em",
+                    color: "rgba(232,213,183,0.6)", display: "flex", alignItems: "center", gap: 5,
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,166,35,0.45)"; e.currentTarget.style.color = "#e8d5b7"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "rgba(232,213,183,0.6)"; }}
+                >
+                  <X size={11} /> Done
+                </button>
               </div>
             </>
           ) : (
@@ -731,6 +870,63 @@ export default function WeeklyNotes() {
   const [chatMessages, setChatMessages] = useState([]); // { role: "user" | "assistant", content: string }
   const [chatBusy, setChatBusy] = useState(false);
 
+  // ── Chat voice recording ───────────────────────────────────────
+  const [chatRecording, setChatRecording] = useState(false);
+  const [chatTranscribing, setChatTranscribing] = useState(false);
+  const chatMediaRecorderRef = useRef(null);
+  const chatChunksRef = useRef([]);
+  const chatStreamRef = useRef(null);
+
+  async function startChatRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chatStreamRef.current = stream;
+      chatChunksRef.current = [];
+
+      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? { mimeType: "audio/webm;codecs=opus" }
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? { mimeType: "audio/webm" }
+          : {};
+
+      const mr = new MediaRecorder(stream, options);
+      chatMediaRecorderRef.current = mr;
+
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) chatChunksRef.current.push(e.data);
+      };
+
+      mr.onstop = async () => {
+        const mimeType = mr.mimeType || "audio/webm";
+        const blob = new Blob(chatChunksRef.current, { type: mimeType });
+        chatChunksRef.current = [];
+        setChatTranscribing(true);
+        try {
+          const transcribed = await transcribeAudio(blob);
+          if (transcribed) {
+            setChatInput((prev) => prev.trim() ? `${prev.trimEnd()} ${transcribed}` : transcribed);
+          }
+        } catch {
+          toast.error("Voice transcription failed.");
+        } finally {
+          setChatTranscribing(false);
+        }
+      };
+
+      mr.start(250);
+      setChatRecording(true);
+    } catch {
+      toast.error("Microphone access denied.");
+    }
+  }
+
+  function stopChatRecording() {
+    chatMediaRecorderRef.current?.stop();
+    chatStreamRef.current?.getTracks().forEach((t) => t.stop());
+    chatStreamRef.current = null;
+    setChatRecording(false);
+  }
+
   // Fetch notes for the current week from Supabase
   useEffect(() => {
     let cancelled = false;
@@ -835,6 +1031,7 @@ export default function WeeklyNotes() {
     }}>
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes mic-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.8); } }
       `}</style>
       <div style={{
         maxWidth: 680,
@@ -1232,7 +1429,34 @@ export default function WeeklyNotes() {
                 }}
               />
 
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {/* Mic / Stop button */}
+                <button
+                  type="button"
+                  title={chatRecording ? "Stop recording" : "Dictate message"}
+                  onClick={chatRecording ? stopChatRecording : startChatRecording}
+                  disabled={chatTranscribing || chatBusy}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 42, height: 42, flexShrink: 0,
+                    background: chatRecording ? "rgba(220,60,60,0.14)" : "rgba(255,255,255,0.04)",
+                    border: chatRecording ? "1px solid rgba(220,60,60,0.5)" : "1px solid rgba(245,166,35,0.2)",
+                    borderRadius: 14,
+                    cursor: chatTranscribing || chatBusy ? "not-allowed" : "pointer",
+                    opacity: chatTranscribing || chatBusy ? 0.5 : 1,
+                    transition: "all 0.18s",
+                  }}
+                >
+                  {chatTranscribing ? (
+                    <Loader2 size={16} color="rgba(245,166,35,0.7)" style={{ animation: "spin 0.8s linear infinite" }} />
+                  ) : chatRecording ? (
+                    <Square size={14} fill="rgba(220,100,100,0.85)" color="rgba(220,100,100,0.85)" style={{ animation: "mic-pulse 1s ease-in-out infinite" }} />
+                  ) : (
+                    <Mic size={16} color="rgba(245,166,35,0.6)" />
+                  )}
+                </button>
+
+                {/* Send button */}
                 <button
                   type="button"
                   onClick={sendChat}
