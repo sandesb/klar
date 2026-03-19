@@ -163,6 +163,7 @@ export default defineConfig(({ mode }) => {
                 const parsed = JSON.parse(body || '{}')
                 const userMessage = parsed.userMessage
                 const messages = Array.isArray(parsed.messages) ? parsed.messages : []
+                const images = Array.isArray(parsed.images) ? parsed.images.slice(0, 5) : []
                 const weekStartKey = parsed.weekStartKey
                 const weekEndKey = parsed.weekEndKey
 
@@ -234,23 +235,31 @@ export default defineConfig(({ mode }) => {
                 ].join('\n')
 
                 const groq = new Groq({ apiKey: groqApiKey })
+                const userContentParts = [
+                  { type: 'text', text: userMessage },
+                  ...images
+                    .filter((img) => typeof img === 'string' && img.startsWith('data:image/'))
+                    .map((img) => ({ type: 'image_url', image_url: { url: img } })),
+                ]
+
                 const groqMessages = [
                   { role: 'system', content: systemPrompt },
                   ...messages.map((m) => ({
                     role: m.role === 'assistant' ? 'assistant' : 'user',
                     content: String(m.content ?? ''),
                   })),
-                  { role: 'user', content: userMessage },
+                  { role: 'user', content: userContentParts },
                 ]
 
+                const hasImages = userContentParts.length > 1
                 const completion = await groq.chat.completions.create({
-                  model: 'openai/gpt-oss-120b',
+                  model: hasImages ? 'meta-llama/llama-4-scout-17b-16e-instruct' : 'openai/gpt-oss-120b',
                   messages: groqMessages,
                   temperature: 0.6,
-                  max_completion_tokens: 400,
+                  max_completion_tokens: hasImages ? 1024 : 400,
                   top_p: 1,
                   stream: false,
-                  reasoning_effort: 'medium',
+                  ...(hasImages ? {} : { reasoning_effort: 'medium' }),
                 })
 
                 const answer = completion?.choices?.[0]?.message?.content ?? ''

@@ -1,4 +1,11 @@
-export async function fetchChatCompletion({ userMessage, messages = [], weekStartKey, weekEndKey, signal }) {
+export async function fetchChatCompletion({
+  userMessage,
+  messages = [],
+  weekStartKey,
+  weekEndKey,
+  images = [],
+  signal,
+}) {
   // Local dev: you can still use Vite proxy/middleware if you add one.
   // Netlify static: call the function URL.
   const endpoint = import.meta.env.DEV ? "/api/chat" : "/.netlify/functions/chat";
@@ -6,7 +13,7 @@ export async function fetchChatCompletion({ userMessage, messages = [], weekStar
   const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userMessage, messages, weekStartKey, weekEndKey }),
+    body: JSON.stringify({ userMessage, messages, weekStartKey, weekEndKey, images }),
     signal,
   });
 

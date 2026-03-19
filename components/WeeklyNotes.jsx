@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
@@ -874,6 +874,10 @@ export default function WeeklyNotes() {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([]); // { role: "user" | "assistant", content: string }
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatImages, setChatImages] = useState([]); // [{ name, dataUrl }]
+  const [chatImageReading, setChatImageReading] = useState(false);
+  const [chatAnalyzingImages, setChatAnalyzingImages] = useState(false);
+  const fileInputRef = useRef(null);
 
   // ── Speaker (auto-TTS) toggle ──────────────────────────────────
   const [speakerOn, setSpeakerOn] = useState(false);
@@ -944,6 +948,42 @@ export default function WeeklyNotes() {
     setChatRecording(false);
   }
 
+  async function handleSelectImages(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+
+    const remaining = Math.max(0, 5 - chatImages.length);
+    if (remaining <= 0) {
+      toast.error("Max 5 images allowed.");
+      return;
+    }
+    const picked = files.slice(0, remaining);
+    if (files.length > remaining) {
+      toast.error("Only 5 images max. Extra files were ignored.");
+    }
+
+    setChatImageReading(true);
+    try {
+      const encoded = await Promise.all(
+        picked.map(
+          (file) =>
+            new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve({ name: file.name, dataUrl: String(reader.result || "") });
+              reader.onerror = () => reject(new Error("file-read-failed"));
+              reader.readAsDataURL(file);
+            })
+        )
+      );
+      setChatImages((prev) => [...prev, ...encoded].slice(0, 5));
+    } catch {
+      toast.error("Could not read selected image(s).");
+    } finally {
+      setChatImageReading(false);
+    }
+  }
+
   // Fetch notes for the current week from Supabase
   useEffect(() => {
     let cancelled = false;
@@ -973,21 +1013,29 @@ export default function WeeklyNotes() {
 
   async function sendChat() {
     const text = chatInput.trim();
-    if (!text || chatBusy) return;
+    const hasImages = chatImages.length > 0;
+    if ((!text && !hasImages) || chatBusy || chatImageReading) return;
 
-    const userMsg = { role: "user", content: text };
+    const userMsg = {
+      role: "user",
+      content: `${text || "(image query)"}${hasImages ? `\n[${chatImages.length} image${chatImages.length > 1 ? "s" : ""} attached]` : ""}`,
+    };
     const history = [...chatMessages, userMsg];
+    const imagesPayload = chatImages.map((img) => img.dataUrl);
 
     setChatInput("");
+    setChatImages([]);
+    setChatAnalyzingImages(hasImages);
     setChatMessages(history);
     setChatBusy(true);
 
     try {
       const answer = await fetchChatCompletion({
-        userMessage: text,
+        userMessage: text || "Analyze the attached image(s) and help me based on them.",
         messages: chatMessages, // keep history *before* this user message
         weekStartKey: toDateKey(weekStart),
         weekEndKey,
+        images: imagesPayload,
       });
 
       const finalAnswer = answer || "No answer returned.";
@@ -1009,6 +1057,7 @@ export default function WeeklyNotes() {
       ]);
     } finally {
       setChatBusy(false);
+      setChatAnalyzingImages(false);
     }
   }
 
@@ -1417,7 +1466,10 @@ export default function WeeklyNotes() {
               })}
               {chatBusy ? (
                 <div style={{ alignSelf: "flex-start", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "10px 12px", fontFamily: FONT_MONO, fontSize: 12.5, color: "rgba(232,213,183,0.6)" }}>
-                  Thinking…
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                    <Loader2 size={13} style={{ animation: "spin 0.9s linear infinite" }} />
+                    {chatAnalyzingImages ? "Analyzing image(s)…" : "Thinking…"}
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -1455,6 +1507,56 @@ export default function WeeklyNotes() {
                   outline: "none",
                   lineHeight: 1.5,
                 }}
+              />
+
+              {chatImages.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  {chatImages.map((img, idx) => (
+                    <div
+                      key={`${img.name}-${idx}`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(245,166,35,0.18)",
+                        borderRadius: 999,
+                        padding: "4px 8px",
+                        color: "rgba(232,213,183,0.68)",
+                        fontFamily: FONT_MONO,
+                        fontSize: 10.5,
+                      }}
+                    >
+                      <Camera size={12} color="rgba(245,166,35,0.75)" />
+                      <span>{img.name.length > 18 ? `${img.name.slice(0, 18)}…` : img.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setChatImages((prev) => prev.filter((_, i) => i !== idx))}
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          color: "rgba(232,213,183,0.55)",
+                          cursor: "pointer",
+                          padding: 0,
+                          display: "inline-flex",
+                          alignItems: "center",
+                        }}
+                        title="Remove image"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleSelectImages}
+                style={{ display: "none" }}
               />
 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1514,11 +1616,35 @@ export default function WeeklyNotes() {
                   )}
                 </button>
 
+                {/* Camera / image upload button */}
+                <button
+                  type="button"
+                  title="Upload up to 5 images"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={chatBusy || chatImageReading || chatImages.length >= 5}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 42, height: 42, flexShrink: 0,
+                    background: chatImages.length ? "rgba(245,166,35,0.12)" : "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(245,166,35,0.2)",
+                    borderRadius: 14,
+                    cursor: chatBusy || chatImageReading || chatImages.length >= 5 ? "not-allowed" : "pointer",
+                    opacity: chatBusy || chatImageReading || chatImages.length >= 5 ? 0.5 : 1,
+                    transition: "all 0.18s",
+                  }}
+                >
+                  {chatImageReading ? (
+                    <Loader2 size={16} color="rgba(245,166,35,0.7)" style={{ animation: "spin 0.8s linear infinite" }} />
+                  ) : (
+                    <Camera size={16} color="rgba(245,166,35,0.72)" />
+                  )}
+                </button>
+
                 {/* Send button */}
                 <button
                   type="button"
                   onClick={sendChat}
-                  disabled={chatBusy || chatInput.trim() === ""}
+                  disabled={chatBusy || chatImageReading || (chatInput.trim() === "" && chatImages.length === 0)}
                   style={{
                     flex: 1,
                     background: chatBusy || chatInput.trim() === "" ? "rgba(255,255,255,0.05)" : "rgba(245,166,35,0.15)",
