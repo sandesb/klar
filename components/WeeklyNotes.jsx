@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
@@ -1144,25 +1145,48 @@ export default function WeeklyNotes() {
               ) : null}
               {chatMessages.map((m, idx) => {
                 const isUser = m.role === "user";
+                const bubbleStyle = {
+                  maxWidth: "92%",
+                  background: isUser ? "rgba(245,166,35,0.12)" : "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 14,
+                  padding: "10px 12px",
+                  fontFamily: FONT_MONO,
+                  fontSize: 12.5,
+                  lineHeight: 1.65,
+                  color: "rgba(232,213,183,0.85)",
+                  wordBreak: "break-word",
+                };
                 return (
                   <div
                     key={idx}
                     style={{
                       alignSelf: isUser ? "flex-end" : "flex-start",
-                      maxWidth: "92%",
-                      background: isUser ? "rgba(245,166,35,0.12)" : "rgba(255,255,255,0.03)",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: 14,
-                      padding: "10px 12px",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                      fontFamily: FONT_MONO,
-                      fontSize: 12.5,
-                      lineHeight: 1.65,
-                      color: "rgba(232,213,183,0.85)",
+                      ...bubbleStyle,
                     }}
                   >
-                    {m.content}
+                    {isUser ? (
+                      <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+                    ) : (
+                      <div className="chat-md" style={{ maxWidth: "100%" }}>
+                        <style>{`
+                          .chat-md p { margin: 0 0 6px 0; }
+                          .chat-md p:last-child { margin-bottom: 0; }
+                          .chat-md ul, .chat-md ol { margin: 6px 0; padding-left: 18px; }
+                          .chat-md li { margin: 3px 0; }
+                          .chat-md strong { color: #f5a623; font-weight: 700; }
+                          .chat-md em { color: rgba(232,213,183,0.75); font-style: italic; }
+                          .chat-md table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+                          .chat-md th { background: rgba(245,166,35,0.12); color: rgba(245,166,35,0.9); padding: 5px 9px; border: 1px solid rgba(245,166,35,0.22); font-size: 11px; letter-spacing: 0.08em; text-align: left; }
+                          .chat-md td { padding: 5px 9px; border: 1px solid rgba(255,255,255,0.08); color: rgba(232,213,183,0.8); font-size: 12px; }
+                          .chat-md tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+                          .chat-md h1, .chat-md h2, .chat-md h3 { color: #e8d5b7; margin: 8px 0 4px; font-size: 13px; letter-spacing: 0.05em; }
+                        `}</style>
+                        <ReactMarkdown skipHtml={true}>
+                          {m.content}
+                        </ReactMarkdown>
+                      </div>
+                    )}
                   </div>
                 );
               })}

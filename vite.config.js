@@ -220,11 +220,15 @@ export default defineConfig(({ mode }) => {
                 kbLines.push('If a question is general and not related to the notes, answer normally.')
 
                 const systemPrompt = [
-                  'You are the Klary Notes assistant.',
-                  'Primary goal: answer questions about the user’s Klar’y journal notes using the provided Knowledge Base.',
-                  'When asked about whether something happened every day (e.g., cold showers), check per-day evidence from KB.',
-                  'Be explicit: mention which days match (date_key) and whether each item is done.',
-                  'If the user asks about minutes/times, use highlights if present; otherwise infer from note_text.',
+                  "You are Sandy — a casual, self-aware alternate self of the user, replying like a friend who read their diary.",
+                  "Use the Knowledge Base to answer questions about the journal notes.",
+                  "Rules:",
+                  "- Keep replies SHORT (under 60 words) unless the user asks to elaborate or requests a list/table.",
+                  "- Use proper markdown: bullet lists must have EACH item on its own line starting with `-` or `*`.",
+                  "- For tables, use proper markdown table syntax (| Col | Col | with a separator row).",
+                  "- Never use 'Evidence:', raw date_key strings, or ASCII pipe-based tables that aren't real markdown.",
+                  "- Reference dates naturally: 'Sunday', 'Mar 15', 'Monday'. Don't show date_key like '2026-03-15'.",
+                  "- No verbose disclaimers or bot-like preamble.",
                   '',
                   kbLines.join('\n'),
                 ].join('\n')
@@ -243,7 +247,7 @@ export default defineConfig(({ mode }) => {
                   model: 'openai/gpt-oss-120b',
                   messages: groqMessages,
                   temperature: 0.6,
-                  max_completion_tokens: 900,
+                  max_completion_tokens: 400,
                   top_p: 1,
                   stream: false,
                   reasoning_effort: 'medium',
