@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
 import { fetchChatCompletion } from "../utils/groqChat.js";
-import { fetchAllPrompts, upsertPrompt } from "../supabaseClient.js";
+import { fetchAllPrompts, upsertPrompt, uploadNoteImage, deleteNoteImage, NOTE_IMG_BASE } from "../supabaseClient.js";
 import { transcribeAudio } from "../utils/groqTranscribe.js";
 import { speak, stopSpeaking, unlockAudio } from "../utils/groqTts.js";
 const FONT_MONO = "'DM Mono', monospace";
@@ -146,6 +146,90 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
   useEffect(() => {
     if (!isActive && recording) stopRecording();
   }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Note image upload ──────────────────────────────────────────
+  const [imageUploading, setImageUploading] = useState(false);
+  const noteImgInputRef = useRef(null);
+  const [confirmDeleteImg, setConfirmDeleteImg] = useState(null); // filename | null
+
+  async function uploadAndInsert(file) {
+    if (!file || !file.type.startsWith("image/")) return;
+    setImageUploading(true);
+    try {
+      const filename = await uploadNoteImage(file); // now returns just the filename
+      const marker = `![](${filename})`;
+      const ta = textareaRef.current;
+      if (ta) {
+        const start = ta.selectionStart ?? text.length;
+        const end = ta.selectionEnd ?? text.length;
+        const before = text.slice(0, start);
+        const after = text.slice(end);
+        const prefix = before.length > 0 && !before.endsWith("\n") ? " " : "";
+        const suffix = after.length > 0 && !after.startsWith("\n") ? " " : "";
+        const newText = `${before}${prefix}${marker}${suffix}${after}`;
+        setText(newText);
+        debouncedSave(key, newText);
+        const newPos = start + prefix.length + marker.length + suffix.length;
+        setTimeout(() => {
+          ta.focus();
+          ta.setSelectionRange(newPos, newPos);
+        }, 0);
+      } else {
+        const newText = text ? `${text}\n${marker}` : marker;
+        setText(newText);
+        debouncedSave(key, newText);
+      }
+      toast("Image inserted ✦", {
+        style: {
+          background: "#1a0e00", color: "#e8d5b7",
+          border: "1px solid rgba(245,166,35,0.35)",
+          fontFamily: "'DM Mono', monospace", fontSize: "12px", letterSpacing: "0.05em",
+        },
+      });
+    } catch {
+      toast.error("Image upload failed. Check Supabase bucket.");
+    } finally {
+      setImageUploading(false);
+    }
+  }
+
+  async function removeImage(filename) {
+    // Remove all occurrences of ![](filename) (with optional surrounding spaces)
+    const escaped = filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const newText = text.replace(new RegExp(` ?!\\[\\]\\(${escaped}\\) ?`, "g"), " ").trimEnd();
+    const cleaned = newText === text.trim() ? text : newText;
+    setText(cleaned);
+    debouncedSave(key, cleaned);
+    try {
+      await deleteNoteImage(filename);
+    } catch {
+      toast.error("Could not delete image from bucket.");
+    }
+  }
+
+  function handlePaste(e) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        e.preventDefault();
+        uploadAndInsert(item.getAsFile());
+        return;
+      }
+    }
+  }
+
+  function handleDrop(e) {
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    for (const file of files) {
+      if (file.type.startsWith("image/")) {
+        e.preventDefault();
+        uploadAndInsert(file);
+        return;
+      }
+    }
+  }
 
   // Sync when initial data changes (e.g. week navigation)
   useEffect(() => {
@@ -472,7 +556,67 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                 }}
                 onFocus={e => { e.target.style.borderColor = "rgba(245,166,35,0.55)"; }}
                 onBlur={e => { e.target.style.borderColor = "rgba(245,166,35,0.22)"; }}
+                onPaste={handlePaste}
+                onDrop={handleDrop}
+                onDragOver={e => e.preventDefault()}
               />
+              {/* Hidden image file input */}
+              <input
+                ref={noteImgInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) uploadAndInsert(file);
+                }}
+              />
+
+              {/* ── Inserted image chip strip ── */}
+              {(() => {
+                const imgFilenames = [...text.matchAll(/!\[\]\(([\w.\-]+)\)/g)].map(m => m[1]);
+                if (!imgFilenames.length) return null;
+                return (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                    {imgFilenames.map((fn, i) => (
+                      <div key={`${fn}-${i}`} style={{
+                        position: "relative", display: "inline-flex", flexShrink: 0,
+                      }}>
+                        <img
+                          src={NOTE_IMG_BASE + fn}
+                          alt={fn}
+                          style={{
+                            height: 56, width: 56, objectFit: "cover",
+                            borderRadius: 8,
+                            border: "1px solid rgba(245,166,35,0.25)",
+                            display: "block",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          title={`Remove ${fn}`}
+                          onClick={() => setConfirmDeleteImg(fn)}
+                          style={{
+                            position: "absolute", top: -6, right: -6,
+                            width: 18, height: 18,
+                            background: "rgba(200,40,40,0.88)",
+                            border: "1.5px solid rgba(255,255,255,0.2)",
+                            borderRadius: "50%",
+                            cursor: "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            padding: 0, lineHeight: 1,
+                            color: "#fff", fontSize: 10, fontWeight: 700,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
               {/* ── Voice recording bar ── */}
               <div style={{
                 display: "flex", alignItems: "center", gap: 8, marginTop: 10,
@@ -535,6 +679,28 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                     Listening…
                   </span>
                 )}
+
+                {/* Image upload button */}
+                <button
+                  type="button"
+                  title="Insert image (or paste / drop)"
+                  onClick={() => noteImgInputRef.current?.click()}
+                  disabled={imageUploading}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 28, height: 28, flexShrink: 0,
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(245,166,35,0.18)",
+                    borderRadius: 8,
+                    cursor: imageUploading ? "not-allowed" : "pointer",
+                    opacity: imageUploading ? 0.5 : 1,
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {imageUploading
+                    ? <Loader2 size={13} color="rgba(245,166,35,0.7)" style={{ animation: "spin 0.8s linear infinite" }} />
+                    : <ImageIcon size={13} color="rgba(245,166,35,0.6)" />}
+                </button>
 
                 <div style={{ flex: 1 }} />
 
@@ -805,7 +971,7 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                   )}
                 </>
               ) : hasNote ? (
-                <p style={{
+                <div style={{
                   fontFamily: FONT_MONO,
                   fontSize: 13.5,
                   lineHeight: 1.8,
@@ -814,8 +980,51 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}>
-                  {text}
-                </p>
+                  {text.split(/(!\[\]\([\w.\-]+\))/g).map((part, i) => {
+                    const m = part.match(/^!\[\]\(([\w.\-]+)\)$/);
+                    if (m) {
+                      const fn = m[1];
+                      const src = NOTE_IMG_BASE + fn;
+                      return (
+                        <span key={i} style={{ position: "relative", display: "inline-block", verticalAlign: "middle", margin: "3px 5px" }}>
+                          <img
+                            src={src}
+                            alt={fn}
+                            style={{
+                              maxHeight: 160,
+                              maxWidth: "100%",
+                              borderRadius: 8,
+                              display: "block",
+                              border: "1px solid rgba(245,166,35,0.18)",
+                              cursor: "pointer",
+                            }}
+                            onClick={() => window.open(src, "_blank")}
+                            title="Click to open full size"
+                          />
+                          <button
+                            type="button"
+                            title="Delete image"
+                            onClick={(e) => { e.stopPropagation(); setConfirmDeleteImg(fn); }}
+                            style={{
+                              position: "absolute", top: -7, right: -7,
+                              width: 20, height: 20,
+                              background: "rgba(200,40,40,0.9)",
+                              border: "1.5px solid rgba(255,255,255,0.25)",
+                              borderRadius: "50%",
+                              cursor: "pointer",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              padding: 0, lineHeight: 1,
+                              color: "#fff", fontSize: 11, fontWeight: 700,
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      );
+                    }
+                    return <span key={i}>{part}</span>;
+                  })}
+                </div>
               ) : (
                 <p style={{
                   fontFamily: FONT_MONO, fontSize: 12.5, lineHeight: 1.7,
@@ -868,6 +1077,72 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Image delete confirmation dialog ── */}
+      {confirmDeleteImg && (
+        <div
+          onClick={() => setConfirmDeleteImg(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#120d00",
+              border: "1px solid rgba(200,40,40,0.45)",
+              borderRadius: 16,
+              padding: "24px 28px",
+              maxWidth: 340,
+              width: "90%",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
+              fontFamily: "'DM Mono', monospace",
+            }}
+          >
+            <p style={{ margin: "0 0 6px", fontSize: 13.5, color: "#e8d5b7", lineHeight: 1.5 }}>
+              Delete this image?
+            </p>
+            <p style={{ margin: "0 0 20px", fontSize: 10.5, color: "rgba(232,213,183,0.4)", wordBreak: "break-all" }}>
+              {confirmDeleteImg}
+            </p>
+            <p style={{ margin: "0 0 20px", fontSize: 11.5, color: "rgba(232,213,183,0.55)", lineHeight: 1.6 }}>
+              This will remove it from the note <em>and</em> permanently delete it from storage.
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteImg(null)}
+                style={{
+                  background: "transparent",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 9, padding: "7px 18px",
+                  cursor: "pointer", fontFamily: "'DM Mono', monospace",
+                  fontSize: 11, letterSpacing: "0.08em",
+                  color: "rgba(232,213,183,0.55)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { removeImage(confirmDeleteImg); setConfirmDeleteImg(null); }}
+                style={{
+                  background: "rgba(200,40,40,0.15)",
+                  border: "1px solid rgba(200,40,40,0.5)",
+                  borderRadius: 9, padding: "7px 18px",
+                  cursor: "pointer", fontFamily: "'DM Mono', monospace",
+                  fontSize: 11, letterSpacing: "0.08em",
+                  color: "rgba(240,100,100,0.9)",
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
