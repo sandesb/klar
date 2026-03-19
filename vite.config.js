@@ -268,6 +268,62 @@ export default defineConfig(({ mode }) => {
         },
       },
       {
+        name: 'groq-tts-api',
+        configureServer(server) {
+          server.middlewares.use('/api/tts', async (req, res) => {
+            const origin = req.headers.origin || '*'
+            res.setHeader('Access-Control-Allow-Origin', origin)
+            res.setHeader('Vary', 'Origin')
+            res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+            res.setHeader('Access-Control-Max-Age', '86400')
+
+            if (req.method === 'OPTIONS') {
+              res.statusCode = 204
+              res.end()
+              return
+            }
+
+            if (req.method !== 'POST') {
+              res.statusCode = 405
+              res.end(JSON.stringify({ error: 'Method Not Allowed' }))
+              return
+            }
+
+            try {
+              const chunks = []
+              for await (const chunk of req) chunks.push(chunk)
+              const body = Buffer.concat(chunks).toString('utf-8')
+              const { text } = JSON.parse(body || '{}')
+
+              if (!text) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: 'Missing text' }))
+                return
+              }
+
+              const groq = new Groq({ apiKey: groqApiKey })
+              const wav = await groq.audio.speech.create({
+                model: 'canopylabs/orpheus-v1-english',
+                voice: 'autumn',
+                response_format: 'wav',
+                input: text,
+              })
+
+              const buffer = Buffer.from(await wav.arrayBuffer())
+              res.statusCode = 200
+              res.setHeader('Content-Type', 'audio/wav')
+              res.setHeader('Cache-Control', 'no-cache')
+              res.end(buffer)
+            } catch (e) {
+              res.statusCode = 500
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: 'TTS failed', details: String(e?.message || e) }))
+            }
+          })
+        },
+      },
+      {
         name: 'groq-transcribe-api',
         configureServer(server) {
           server.middlewares.use('/api/transcribe', async (req, res) => {

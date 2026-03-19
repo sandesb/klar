@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
 import { fetchChatCompletion } from "../utils/groqChat.js";
 import { transcribeAudio } from "../utils/groqTranscribe.js";
+import { speak, stopSpeaking, unlockAudio } from "../utils/groqTts.js";
 const FONT_MONO = "'DM Mono', monospace";
 const FONT_SERIF = "'Playfair Display', serif";
 
@@ -115,7 +116,11 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
             });
           }
         } catch (err) {
-          toast.error("Transcription failed. Check your Groq key.");
+          if (err?.status === 429 || /429|rate limit/i.test(err?.message)) {
+            toast.error("Rate limit exceeded — try again in a minute.");
+          } else {
+            toast.error("Transcription failed. Check your Groq key.");
+          }
         } finally {
           setTranscribing(false);
         }
@@ -870,6 +875,14 @@ export default function WeeklyNotes() {
   const [chatMessages, setChatMessages] = useState([]); // { role: "user" | "assistant", content: string }
   const [chatBusy, setChatBusy] = useState(false);
 
+  // ── Speaker (auto-TTS) toggle ──────────────────────────────────
+  const [speakerOn, setSpeakerOn] = useState(false);
+
+  // Stop any in-progress speech when the popup closes
+  useEffect(() => {
+    if (!chatOpen) stopSpeaking();
+  }, [chatOpen]);
+
   // ── Chat voice recording ───────────────────────────────────────
   const [chatRecording, setChatRecording] = useState(false);
   const [chatTranscribing, setChatTranscribing] = useState(false);
@@ -906,8 +919,12 @@ export default function WeeklyNotes() {
           if (transcribed) {
             setChatInput((prev) => prev.trim() ? `${prev.trimEnd()} ${transcribed}` : transcribed);
           }
-        } catch {
-          toast.error("Voice transcription failed.");
+        } catch (err) {
+          if (err?.status === 429 || /429|rate limit/i.test(err?.message)) {
+            toast.error("Rate limit exceeded — try again in a minute.");
+          } else {
+            toast.error("Voice transcription failed.");
+          }
         } finally {
           setChatTranscribing(false);
         }
@@ -973,7 +990,18 @@ export default function WeeklyNotes() {
         weekEndKey,
       });
 
-      setChatMessages([...history, { role: "assistant", content: answer || "No answer returned." }]);
+      const finalAnswer = answer || "No answer returned.";
+      setChatMessages([...history, { role: "assistant", content: finalAnswer }]);
+      if (speakerOn) {
+        speak(finalAnswer).catch((err) => {
+          console.error("TTS error:", err);
+          if (err?.status === 429 || /429|rate limit/i.test(err?.message)) {
+            toast.error("Rate limit exceeded — Sandy will text only for now.");
+          } else {
+            toast.error("Couldn't play audio. Check the Groq key or try toggling speaker off/on.");
+          }
+        });
+      }
     } catch (e) {
       setChatMessages([
         ...history,
@@ -1430,6 +1458,36 @@ export default function WeeklyNotes() {
               />
 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {/* Speaker toggle */}
+                <button
+                  type="button"
+                  title={speakerOn ? "Speaker on — click to mute" : "Speaker off — click to enable auto-read"}
+                  onClick={() => {
+                    setSpeakerOn((v) => {
+                      const next = !v;
+                      if (next) {
+                        unlockAudio(); // unlock AudioContext during this user gesture
+                      } else {
+                        stopSpeaking();
+                      }
+                      return next;
+                    });
+                  }}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 42, height: 42, flexShrink: 0,
+                    background: speakerOn ? "rgba(245,166,35,0.15)" : "rgba(255,255,255,0.04)",
+                    border: speakerOn ? "1px solid rgba(245,166,35,0.5)" : "1px solid rgba(245,166,35,0.15)",
+                    borderRadius: 14,
+                    cursor: "pointer",
+                    transition: "all 0.18s",
+                  }}
+                >
+                  {speakerOn
+                    ? <Volume2 size={16} color="rgba(245,166,35,0.9)" />
+                    : <VolumeX size={16} color="rgba(232,213,183,0.3)" />}
+                </button>
+
                 {/* Mic / Stop button */}
                 <button
                   type="button"
