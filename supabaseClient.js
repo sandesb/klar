@@ -214,3 +214,8 @@ export async function upsertChatThreadMessages({
   await supabaseUpdate(CHAT_TABLE, `id=eq.${encodeURIComponent(String(id))}`, updates);
   return true;
 }
+
+export async function deleteChatThreadById(id) {
+  if (!id) return;
+  await supabaseDelete(CHAT_TABLE, `id=eq.${encodeURIComponent(String(id))}`);
+}

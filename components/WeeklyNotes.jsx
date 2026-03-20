@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, Plus, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, Plus, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
 import { fetchChatCompletion } from "../utils/groqChat.js";
-import { fetchAllPrompts, upsertPrompt, uploadNoteImage, deleteNoteImage, NOTE_IMG_BASE, createChatThread, fetchLatestChatThread, fetchChatThreadsList, fetchChatThreadById, upsertChatThreadMessages } from "../supabaseClient.js";
+import { fetchAllPrompts, upsertPrompt, uploadNoteImage, deleteNoteImage, NOTE_IMG_BASE, createChatThread, fetchLatestChatThread, fetchChatThreadsList, fetchChatThreadById, upsertChatThreadMessages, deleteChatThreadById } from "../supabaseClient.js";
 import { transcribeAudio } from "../utils/groqTranscribe.js";
 import { speak, stopSpeaking, unlockAudio } from "../utils/groqTts.js";
 const FONT_MONO = "'DM Mono', monospace";
@@ -1256,6 +1256,8 @@ export default function WeeklyNotes() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
   const [historySearching, setHistorySearching] = useState(false);
+  const [chatDeleteConfirm, setChatDeleteConfirm] = useState(null); // { id, title } | null
+  const [chatDeleting, setChatDeleting] = useState(false);
   const [chatImages, setChatImages] = useState([]); // [{ name, dataUrl }]
   const [chatImageReading, setChatImageReading] = useState(false);
   const [chatAnalyzingImages, setChatAnalyzingImages] = useState(false);
@@ -2162,28 +2164,61 @@ export default function WeeklyNotes() {
                         const when = t?.updated_at ? new Date(t.updated_at).toLocaleString() : "";
                         const isActive = t?.id === activeChatId;
                         return (
-                          <button
+                          <div
                             key={t.id}
-                            type="button"
+                            role="button"
+                            tabIndex={0}
                             onClick={() => openChatThread(t.id)}
+                            onKeyDown={(e) => e.key === "Enter" && openChatThread(t.id)}
                             style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              justifyContent: "space-between",
+                              gap: 12,
                               textAlign: "left",
                               background: isActive ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.02)",
-                              border: isActive
-                                ? "1px solid rgba(245,166,35,0.35)"
-                                : "1px solid rgba(245,166,35,0.12)",
+                              border: isActive ? "1px solid rgba(245,166,35,0.35)" : "1px solid rgba(245,166,35,0.12)",
                               borderRadius: 12,
                               padding: "10px 12px",
                               cursor: "pointer",
                             }}
                           >
-                            <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, color: "rgba(232,213,183,0.9)" }}>
-                              {t.title ? t.title : "Chat"}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, color: "rgba(232,213,183,0.9)", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {t.title ? t.title : "Chat"}
+                              </div>
+                              <div style={{ marginTop: 4, fontFamily: FONT_MONO, fontSize: 10.5, color: "rgba(232,213,183,0.35)" }}>
+                                {when}
+                              </div>
                             </div>
-                            <div style={{ marginTop: 4, fontFamily: FONT_MONO, fontSize: 10.5, color: "rgba(232,213,183,0.35)" }}>
-                              {when}
-                            </div>
-                          </button>
+
+                            <button
+                              type="button"
+                              title="Delete chat"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setChatDeleteConfirm({ id: t.id, title: t.title || "Chat" });
+                              }}
+                              style={{
+                                border: "none",
+                                background: "transparent",
+                                cursor: "pointer",
+                                padding: 0,
+                                marginTop: 2,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                                width: 28,
+                                height: 28,
+                                borderRadius: 10,
+                                border: "1px solid rgba(200,40,40,0.35)",
+                                color: "rgba(240,100,100,0.95)",
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -2455,6 +2490,144 @@ export default function WeeklyNotes() {
         )}
 
       </div>
+
+      {/* ── Delete chat confirmation dialog ───────────────────── */}
+      {chatDeleteConfirm && (
+        <div
+          onClick={() => setChatDeleteConfirm(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10050,
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(520px, 96vw)",
+              background: "rgba(20,11,2,0.97)",
+              border: "1px solid rgba(245,166,35,0.28)",
+              borderRadius: 20,
+              boxShadow: "0 24px 72px rgba(0,0,0,0.65)",
+              padding: "20px 22px",
+              fontFamily: "'DM Mono', monospace",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Trash2 size={16} color="rgba(240,100,100,0.9)" />
+                <div style={{ color: "rgba(232,213,183,0.9)", fontSize: 12.5, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                  Delete chat
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChatDeleteConfirm(null)}
+                style={{
+                  background: "transparent",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  color: "rgba(232,213,183,0.7)",
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontFamily: "'DM Mono', monospace",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ marginTop: 14, color: "rgba(232,213,183,0.85)", fontSize: 13.5, lineHeight: 1.6 }}>
+              Delete this chat history item?
+              <div style={{ marginTop: 6, color: "rgba(232,213,183,0.45)", fontSize: 11.5, wordBreak: "break-word" }}>
+                {chatDeleteConfirm.title}
+              </div>
+            </div>
+
+            <div style={{ marginTop: 18, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setChatDeleteConfirm(null)}
+                disabled={chatDeleting}
+                style={{
+                  background: "transparent",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 10,
+                  padding: "8px 16px",
+                  cursor: chatDeleting ? "not-allowed" : "pointer",
+                  color: "rgba(232,213,183,0.6)",
+                  fontFamily: "'DM Mono', monospace",
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = chatDeleteConfirm?.id;
+                  if (!id) return;
+                  setChatDeleting(true);
+                  try {
+                    await deleteChatThreadById(id);
+                    toast("Chat deleted ✦", {
+                      style: {
+                        background: "#1a0e00",
+                        color: "#e8d5b7",
+                        border: "1px solid rgba(245,166,35,0.35)",
+                        fontFamily: "'DM Mono', monospace",
+                        fontSize: "12px",
+                        letterSpacing: "0.05em",
+                      },
+                    });
+
+                    setHistoryThreads((prev) => prev.filter((x) => x.id !== id));
+
+                    if (id === activeChatId) {
+                      setActiveChatId(null);
+                      setActiveChatTitle(null);
+                      setChatMessages([]);
+                    }
+                  } catch {
+                    toast.error("Failed to delete chat history item.");
+                  } finally {
+                    setChatDeleting(false);
+                    setChatDeleteConfirm(null);
+                  }
+                }}
+                disabled={chatDeleting}
+                style={{
+                  background: "rgba(200,40,40,0.15)",
+                  border: "1px solid rgba(200,40,40,0.5)",
+                  borderRadius: 10,
+                  padding: "8px 16px",
+                  cursor: chatDeleting ? "not-allowed" : "pointer",
+                  color: "rgba(240,100,100,0.95)",
+                  fontFamily: "'DM Mono', monospace",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                {chatDeleting ? (
+                  <>
+                    <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} />
+                    Deleting…
+                  </>
+                ) : (
+                  "Delete"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Prompt Manager Dialog ─────────────────────────────── */}
       {promptMgrOpen && (
