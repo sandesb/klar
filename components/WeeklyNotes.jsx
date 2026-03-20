@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, Plus, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
 import { fetchChatCompletion } from "../utils/groqChat.js";
-import { fetchAllPrompts, upsertPrompt, uploadNoteImage, deleteNoteImage, NOTE_IMG_BASE } from "../supabaseClient.js";
+import { fetchAllPrompts, upsertPrompt, uploadNoteImage, deleteNoteImage, NOTE_IMG_BASE, createChatThread, fetchLatestChatThread, fetchChatThreadsList, fetchChatThreadById, upsertChatThreadMessages } from "../supabaseClient.js";
 import { transcribeAudio } from "../utils/groqTranscribe.js";
 import { speak, stopSpeaking, unlockAudio } from "../utils/groqTts.js";
 const FONT_MONO = "'DM Mono', monospace";
@@ -1245,6 +1245,17 @@ export default function WeeklyNotes() {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([]); // { role: "user" | "assistant", content: string }
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatSaving, setChatSaving] = useState(false);
+  const [chatInitLoading, setChatInitLoading] = useState(false);
+
+  // Chat memory (Supabase)
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [activeChatTitle, setActiveChatTitle] = useState(null);
+  const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
+  const [historyThreads, setHistoryThreads] = useState([]); // [{ id, title, created_at, updated_at }]
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historySearching, setHistorySearching] = useState(false);
   const [chatImages, setChatImages] = useState([]); // [{ name, dataUrl }]
   const [chatImageReading, setChatImageReading] = useState(false);
   const [chatAnalyzingImages, setChatAnalyzingImages] = useState(false);
@@ -1298,6 +1309,50 @@ export default function WeeklyNotes() {
   useEffect(() => {
     if (!chatOpen) stopSpeaking();
   }, [chatOpen]);
+
+  // Load last chat thread when chat opens
+  useEffect(() => {
+    if (!chatOpen) return;
+    let cancelled = false;
+
+    async function loadLatest() {
+      setChatInitLoading(true);
+      try {
+        const latest = await fetchLatestChatThread();
+        if (cancelled) return;
+
+        if (latest && Array.isArray(latest.messages)) {
+          setActiveChatId(latest.id);
+          setActiveChatTitle(latest.title ?? null);
+          setChatMessages(latest.messages);
+        } else {
+          setActiveChatId(null);
+          setActiveChatTitle(null);
+          setChatMessages([]);
+        }
+      } catch {
+        if (!cancelled) toast.error("Could not load chat history from Supabase.");
+      } finally {
+        if (!cancelled) setChatInitLoading(false);
+      }
+    }
+
+    loadLatest();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatOpen]);
+
+  // Load chat history list when History panel opens (debounced on search)
+  useEffect(() => {
+    if (!chatHistoryOpen) return;
+    const q = (historySearch || "").trim();
+    const delay = q ? 450 : 0;
+    const t = setTimeout(() => {
+      loadHistoryThreads(q);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [chatHistoryOpen, historySearch]);
 
   // ── Chat voice recording ───────────────────────────────────────
   const [chatRecording, setChatRecording] = useState(false);
@@ -1423,10 +1478,99 @@ export default function WeeklyNotes() {
 
   const chatListRef = useRef(null);
 
+  function deriveChatTitleFromFirstMessage(userText) {
+    const t = (userText || "").replace(/\s+/g, " ").trim();
+    if (!t) return null;
+    return t.length > 40 ? t.slice(0, 40) + "…" : t;
+  }
+
+  async function loadHistoryThreads(search = "") {
+    setHistoryLoading(true);
+    setHistorySearching(false);
+    try {
+      const rows = await fetchChatThreadsList({ search, limit: 30 });
+      setHistoryThreads(rows || []);
+    } catch {
+      toast.error("Could not load chat history from Supabase.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function openChatThread(threadId) {
+    if (!threadId) return;
+    setChatHistoryOpen(false);
+    stopSpeaking();
+    setChatInput("");
+    setChatImages([]);
+    setChatAnalyzingImages(false);
+
+    setChatInitLoading(true);
+    try {
+      const thread = await fetchChatThreadById(threadId);
+      if (!thread || !Array.isArray(thread.messages)) {
+        toast.error("Chat thread was empty or could not be loaded.");
+        return;
+      }
+
+      setActiveChatId(thread.id ?? null);
+      setActiveChatTitle(thread.title ?? null);
+      setChatMessages(thread.messages);
+      const when = thread.created_at ? new Date(thread.created_at).toLocaleString() : "";
+      toast(`Loaded chat${when ? ` from ${when}` : ""}.`, {
+        style: {
+          background: "#1a0e00",
+          color: "#e8d5b7",
+          border: "1px solid rgba(245,166,35,0.35)",
+          fontFamily: "'DM Mono', monospace",
+          fontSize: "12px",
+          letterSpacing: "0.05em",
+        },
+      });
+    } catch {
+      toast.error("Failed to load selected chat history item.");
+    } finally {
+      setChatInitLoading(false);
+    }
+  }
+
   async function sendChat() {
     const text = chatInput.trim();
     const hasImages = chatImages.length > 0;
     if ((!text && !hasImages) || chatBusy || chatImageReading) return;
+
+    // Ensure we have a thread to persist to
+    let threadId = activeChatId;
+    let threadTitle = activeChatTitle;
+    const weekStartKey = toDateKey(weekStart);
+
+    if (!threadId) {
+      try {
+        const created = await createChatThread({
+          title: null,
+          weekStartKey,
+          weekEndKey,
+        });
+        threadId = created?.id ?? null;
+        setActiveChatId(threadId);
+        if (!threadId) {
+          toast.error("Could not create a chat thread in Supabase.");
+          return;
+        }
+      } catch {
+        toast.error("Could not create a chat thread in Supabase.");
+        return;
+      }
+    }
+
+    const computedTitle =
+      threadTitle
+        ? threadTitle
+        : text
+          ? deriveChatTitleFromFirstMessage(text)
+          : hasImages
+            ? "Image chat"
+            : null;
 
     const userMsg = {
       role: "user",
@@ -1451,7 +1595,28 @@ export default function WeeklyNotes() {
       });
 
       const finalAnswer = answer || "No answer returned.";
-      setChatMessages([...history, { role: "assistant", content: finalAnswer }]);
+      const updatedMessages = [...history, { role: "assistant", content: finalAnswer }];
+      setChatMessages(updatedMessages);
+
+      // Persist chat memory (thread messages + search_text)
+      setChatSaving(true);
+      try {
+        const titleToSave = threadTitle ? threadTitle : computedTitle;
+        if (!threadTitle && computedTitle) setActiveChatTitle(computedTitle);
+
+        await upsertChatThreadMessages({
+          id: threadId,
+          title: titleToSave,
+          weekStartKey,
+          weekEndKey,
+          messages: updatedMessages,
+        });
+      } catch {
+        toast.error("Could not save chat to history.");
+      } finally {
+        setChatSaving(false);
+      }
+
       if (speakerOn) {
         speak(finalAnswer).catch((err) => {
           console.error("TTS error:", err);
@@ -1818,6 +1983,113 @@ export default function WeeklyNotes() {
                 >
                   <Settings size={13} />
                 </button>
+
+                {/* Fresh chat (+) */}
+                <button
+                  type="button"
+                  title="New chat"
+                  onClick={() => {
+                    stopSpeaking();
+                    setChatHistoryOpen(false);
+                    setChatInput("");
+                    setChatImages([]);
+                    setChatAnalyzingImages(false);
+                    setChatMessages([]);
+                    setChatSaving(false);
+                    // Create a new thread immediately
+                    (async () => {
+                      try {
+                        const created = await createChatThread({
+                          title: null,
+                          weekStartKey: toDateKey(weekStart),
+                          weekEndKey,
+                        });
+                        setActiveChatId(created?.id ?? null);
+                        setActiveChatTitle(null);
+                        toast("Fresh chat started ✦", {
+                          style: {
+                            background: "#1a0e00",
+                            color: "#e8d5b7",
+                            border: "1px solid rgba(245,166,35,0.35)",
+                            fontFamily: "'DM Mono', monospace",
+                            fontSize: "12px",
+                            letterSpacing: "0.05em",
+                          },
+                        });
+                      } catch {
+                        toast.error("Could not start a fresh chat.");
+                      }
+                    })();
+                  }}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "rgba(232,213,183,0.45)",
+                    borderRadius: 10,
+                    padding: "6px 8px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = "rgba(245,166,35,0.4)";
+                    e.currentTarget.style.color = "rgba(245,166,35,0.8)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                    e.currentTarget.style.color = "rgba(232,213,183,0.45)";
+                  }}
+                >
+                  <Plus size={13} />
+                </button>
+
+                {/* Chat history */}
+                <button
+                  type="button"
+                  title="Chat history"
+                  onClick={() => {
+                    setChatHistoryOpen((v) => {
+                      const next = !v;
+                      if (next) {
+                        stopSpeaking();
+                        toast("Loading chat history…", {
+                          style: {
+                            background: "#1a0e00",
+                            color: "#e8d5b7",
+                            border: "1px solid rgba(245,166,35,0.35)",
+                            fontFamily: "'DM Mono', monospace",
+                            fontSize: "12px",
+                            letterSpacing: "0.05em",
+                          },
+                        });
+                      }
+                      return next;
+                    });
+                  }}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "rgba(232,213,183,0.45)",
+                    borderRadius: 10,
+                    padding: "6px 8px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = "rgba(70,200,110,0.35)";
+                    e.currentTarget.style.color = "rgba(70,200,110,0.85)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                    e.currentTarget.style.color = "rgba(232,213,183,0.45)";
+                  }}
+                >
+                  <Clock size={13} />
+                </button>
+
                 {/* Close button */}
                 <button
                   type="button"
@@ -1850,7 +2122,75 @@ export default function WeeklyNotes() {
                 gap: 10,
               }}
             >
-              {chatMessages.length === 0 ? (
+              {chatHistoryOpen && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                    <input
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      placeholder="Search chat messages…"
+                      style={{
+                        flex: 1,
+                        background: "rgba(255,255,255,0.03)",
+                        border: "1px solid rgba(245,166,35,0.18)",
+                        borderRadius: 14,
+                        padding: "10px 12px",
+                        color: "#e8d5b7",
+                        fontFamily: FONT_MONO,
+                        fontSize: 13,
+                        outline: "none",
+                      }}
+                    />
+                    {(historyLoading || historySearching || chatInitLoading) ? (
+                      <Loader2 size={16} style={{ animation: "spin 0.9s linear infinite", color: "rgba(245,166,35,0.8)" }} />
+                    ) : (
+                      <Clock size={16} color="rgba(232,213,183,0.25)" />
+                    )}
+                  </div>
+
+                  {historyLoading ? (
+                    <div style={{ color: "rgba(232,213,183,0.45)", fontFamily: FONT_MONO, fontSize: 12, lineHeight: 1.6 }}>
+                      Loading chat history…
+                    </div>
+                  ) : historyThreads.length === 0 ? (
+                    <div style={{ color: "rgba(232,213,183,0.45)", fontFamily: FONT_MONO, fontSize: 12, lineHeight: 1.6 }}>
+                      No chat history found.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {historyThreads.map((t) => {
+                        const when = t?.updated_at ? new Date(t.updated_at).toLocaleString() : "";
+                        const isActive = t?.id === activeChatId;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => openChatThread(t.id)}
+                            style={{
+                              textAlign: "left",
+                              background: isActive ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.02)",
+                              border: isActive
+                                ? "1px solid rgba(245,166,35,0.35)"
+                                : "1px solid rgba(245,166,35,0.12)",
+                              borderRadius: 12,
+                              padding: "10px 12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, color: "rgba(232,213,183,0.9)" }}>
+                              {t.title ? t.title : "Chat"}
+                            </div>
+                            <div style={{ marginTop: 4, fontFamily: FONT_MONO, fontSize: 10.5, color: "rgba(232,213,183,0.35)" }}>
+                              {when}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+              {!chatHistoryOpen && chatMessages.length === 0 ? (
                 <div style={{ color: "rgba(232,213,183,0.45)", fontFamily: FONT_MONO, fontSize: 12, lineHeight: 1.6 }}>
                   Ask about your week notes.
                   <div style={{ marginTop: 8, color: "rgba(245,166,35,0.55)" }}>
@@ -1858,7 +2198,7 @@ export default function WeeklyNotes() {
                   </div>
                 </div>
               ) : null}
-              {chatMessages.map((m, idx) => {
+              {!chatHistoryOpen && chatMessages.map((m, idx) => {
                 const isUser = m.role === "user";
                 const bubbleStyle = {
                   maxWidth: "92%",
@@ -1905,7 +2245,7 @@ export default function WeeklyNotes() {
                   </div>
                 );
               })}
-              {chatBusy ? (
+              {!chatHistoryOpen && chatBusy ? (
                 <div style={{ alignSelf: "flex-start", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "10px 12px", fontFamily: FONT_MONO, fontSize: 12.5, color: "rgba(232,213,183,0.6)" }}>
                   <div style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                     <Loader2 size={13} style={{ animation: "spin 0.9s linear infinite" }} />
@@ -1915,6 +2255,7 @@ export default function WeeklyNotes() {
               ) : null}
             </div>
 
+            {!chatHistoryOpen && (
             <div
               style={{
                 borderTop: "1px solid rgba(255,255,255,0.08)",
@@ -2109,6 +2450,7 @@ export default function WeeklyNotes() {
                 </button>
               </div>
             </div>
+            )}
           </div>
         )}
 

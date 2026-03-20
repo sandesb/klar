@@ -125,3 +125,92 @@ export async function upsertPrompt(key, type, label, promptText) {
     "key"
   );
 }
+
+// ── Chat memory (klary_chat) ─────────────────────────────────────
+
+const CHAT_TABLE = "klary_chat";
+
+function buildChatSearchText(messages = []) {
+  // Keep it simple and deterministic for search_text updates.
+  try {
+    return (messages || [])
+      .map((m) => (typeof m?.content === "string" ? m.content : ""))
+      .join("\n")
+      .trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Create a new chat thread with empty messages.
+ * Returns the created row (or at least its id).
+ */
+export async function createChatThread({ title = null, weekStartKey = null, weekEndKey = null } = {}) {
+  const payload = {
+    title: title || null,
+    week_start_key: weekStartKey || null,
+    week_end_key: weekEndKey || null,
+    messages: [],
+    search_text: "",
+  };
+  const created = await supabaseInsert(CHAT_TABLE, payload);
+  const row = Array.isArray(created) ? created[0] : created;
+  return row || null; // { id, ... } expected
+}
+
+export async function fetchLatestChatThread() {
+  const url = `${restUrl(CHAT_TABLE)}?select=*&order=updated_at.desc&limit=1`;
+  const res = await fetch(url, { headers: headers() });
+  if (!res.ok) throw new Error(`Supabase SELECT ${CHAT_TABLE} latest failed: ${res.status}`);
+  const rows = await res.json();
+  return rows?.[0] ?? null;
+}
+
+export async function fetchChatThreadsList({ search = "", limit = 20 } = {}) {
+  const trimmed = (search || "").trim();
+  let url =
+    `${restUrl(CHAT_TABLE)}?select=id,title,created_at,updated_at&order=updated_at.desc&limit=${limit}`;
+  if (trimmed) {
+    url += `&search_text=ilike.*${encodeURIComponent(trimmed)}*`;
+  }
+  const res = await fetch(url, { headers: headers() });
+  if (!res.ok) throw new Error(`Supabase SELECT ${CHAT_TABLE} list failed: ${res.status}`);
+  return res.json(); // [{ id,title,created_at,updated_at }]
+}
+
+export async function fetchChatThreadById(id) {
+  const safeId = encodeURIComponent(String(id));
+  const res = await fetch(
+    `${restUrl(CHAT_TABLE)}?select=id,title,messages,created_at,updated_at&id=eq.${safeId}&limit=1`,
+    { headers: headers() }
+  );
+  if (!res.ok) throw new Error(`Supabase SELECT ${CHAT_TABLE} by id failed: ${res.status}`);
+  const rows = await res.json();
+  return rows?.[0] ?? null;
+}
+
+/**
+ * Persist messages for a thread.
+ * messages: [{ role: 'user'|'assistant', content: string }]
+ */
+export async function upsertChatThreadMessages({
+  id,
+  title = null,
+  weekStartKey = null,
+  weekEndKey = null,
+  messages = [],
+} = {}) {
+  if (!id) throw new Error("upsertChatThreadMessages: missing `id`");
+  const searchText = buildChatSearchText(messages);
+  const updates = {
+    messages,
+    search_text: searchText,
+  };
+  if (title !== null && title !== undefined) updates.title = title;
+  if (weekStartKey !== null && weekStartKey !== undefined) updates.week_start_key = weekStartKey;
+  if (weekEndKey !== null && weekEndKey !== undefined) updates.week_end_key = weekEndKey;
+
+  await supabaseUpdate(CHAT_TABLE, `id=eq.${encodeURIComponent(String(id))}`, updates);
+  return true;
+}
