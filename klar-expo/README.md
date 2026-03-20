@@ -139,6 +139,54 @@ Output APK path:
 android/app/build/outputs/apk/release/app-release.apk
 ```
 
+## Offline LLM (llama.rn) in this app
+
+This app now includes a native-only **Offline LLM** panel (inside the main screen) using `llama.rn`.
+
+- Works on **Android/iOS native builds**.
+- Does **not** run inference on Expo Web.
+
+### Model format and shorthand
+
+- GGUF model files are required.
+- The shortcut you mentioned:
+  - `unsloth/Qwen3-0.6B-GGUF:Q4_K_M`
+  - is normalized to:
+  - `unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_K_M.gguf`
+
+### Important: about `llama-b8429-bin-win-vulkan-x64`
+
+That package is for **Windows desktop** (`.dll` / `.exe`) and is **not used inside Android APKs**.
+For APK builds, `llama.rn` compiles/links Android-native binaries during prebuild/build.
+
+### Where to place local GGUF model for APK
+
+Recommended runtime location inside Android app sandbox:
+
+```text
+file:///data/user/0/com.sandesb.klarnative/files/models/<your-model>.gguf
+```
+
+Example:
+
+```text
+file:///data/user/0/com.sandesb.klarnative/files/models/Qwen3-0.6B-Q4_K_M.gguf
+```
+
+The app UI lets you:
+
+1. Download directly from HF using model id/shorthand, or
+2. Load from a local absolute `file://` path.
+
+### Practical workflow
+
+1) Build/install APK (`eas build -p android --profile preview`).
+2) Open app → Offline LLM panel.
+3) Either:
+   - Download HF model from panel, or
+   - Set local path and tap **Load Model**.
+4) Enter prompt and tap **Generate Response**.
+
 ## Create a new repository for this app
 
 From inside this folder:

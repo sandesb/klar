@@ -7,6 +7,7 @@ import {
   Easing,
   Linking,
   Modal,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -47,9 +48,19 @@ import {
   X,
   Youtube,
 } from "lucide-react-native";
+import {
+  downloadModelFromHf,
+  formatHfModelId,
+  generateLlamaResponse,
+  isLlamaModelLoaded,
+  loadLlamaModel,
+  unloadLlamaModel,
+} from "./llm/llamaBridge";
 
 const STORAGE_SAVED_RANGES_KEY = "@klar_expo/saved_ranges/v1";
 const STORAGE_TODO_KEY = "@klar_expo/todo_map/v1";
+const DEFAULT_HF_MODEL_SHORTCUT = "unsloth/Qwen3-0.6B-GGUF:Q4_K_M";
+const DEFAULT_LOCAL_MODEL_PATH = "file:///data/user/0/com.sandesb.klarnative/files/models/Qwen3-0.6B-Q4_K_M.gguf";
 
 const AD_DEFAULT_YEAR = 2026;
 const ONE_DAY_MS = 86400000;
@@ -685,6 +696,18 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpLoading, setHelpLoading] = useState(true);
   const [helpError, setHelpError] = useState(false);
+  const [showLlmPanel, setShowLlmPanel] = useState(false);
+  const [llmModelId, setLlmModelId] = useState(DEFAULT_HF_MODEL_SHORTCUT);
+  const [llmModelPath, setLlmModelPath] = useState(DEFAULT_LOCAL_MODEL_PATH);
+  const [llmPrompt, setLlmPrompt] = useState("Give me a 3-point summary of offline AI on mobile.");
+  const [llmResponse, setLlmResponse] = useState("");
+  const [llmStatus, setLlmStatus] = useState("Idle");
+  const [llmDownloadProgress, setLlmDownloadProgress] = useState(0);
+  const [llmLoadProgress, setLlmLoadProgress] = useState(0);
+  const [llmLoading, setLlmLoading] = useState(false);
+  const [llmGenerating, setLlmGenerating] = useState(false);
+  const [llmModelLoaded, setLlmModelLoaded] = useState(false);
+  const [llmRuntimeInfo, setLlmRuntimeInfo] = useState(null);
 
   useEffect(() => {
     async function loadInitialData() {
@@ -694,6 +717,13 @@ export default function App() {
       setTodoMap(todos && typeof todos === "object" ? todos : {});
     }
     loadInitialData();
+  }, []);
+
+  useEffect(() => {
+    setLlmModelLoaded(isLlamaModelLoaded());
+    return () => {
+      unloadLlamaModel().catch(() => {});
+    };
   }, []);
 
   const normalizedRange = useMemo(() => {
@@ -1179,6 +1209,108 @@ export default function App() {
     Toast.show({ type: "success", text1: "Task deleted", text1Style: toastStyle });
   }
 
+  async function handleDownloadHfModel() {
+    if (Platform.OS === "web") {
+      Toast.show({ type: "info", text1: "Local LLM works only on Android/iOS build.", text1Style: toastStyle });
+      return;
+    }
+    setLlmLoading(true);
+    setLlmStatus("Downloading model from Hugging Face…");
+    setLlmDownloadProgress(0);
+    try {
+      const normalizedId = formatHfModelId(llmModelId);
+      const downloadedPath = await downloadModelFromHf(normalizedId, (progress) => {
+        setLlmDownloadProgress(Math.max(0, Math.min(100, progress?.percentage ?? 0)));
+      });
+      setLlmModelPath(downloadedPath);
+      setLlmStatus("Model download completed.");
+      Toast.show({ type: "success", text1: "Model downloaded.", text1Style: toastStyle });
+    } catch (error) {
+      const message = error?.message || "Model download failed.";
+      setLlmStatus(message);
+      Toast.show({ type: "error", text1: message, text1Style: toastStyle });
+    } finally {
+      setLlmLoading(false);
+    }
+  }
+
+  async function handleLoadLlmModel() {
+    if (Platform.OS === "web") {
+      Toast.show({ type: "info", text1: "Local LLM works only on Android/iOS build.", text1Style: toastStyle });
+      return;
+    }
+    setLlmLoading(true);
+    setLlmLoadProgress(0);
+    setLlmStatus("Initializing model context…");
+    try {
+      const runtimeInfo = await loadLlamaModel(
+        llmModelPath,
+        { nCtx: 2048, nGpuLayers: 99 },
+        (progress) => {
+          setLlmLoadProgress(Math.max(0, Math.min(100, progress * 100)));
+        }
+      );
+      setLlmRuntimeInfo(runtimeInfo);
+      setLlmModelLoaded(true);
+      setLlmStatus(runtimeInfo?.gpu ? "Model ready (GPU acceleration active)." : "Model ready (CPU fallback).");
+      Toast.show({ type: "success", text1: "Local model loaded.", text1Style: toastStyle });
+    } catch (error) {
+      const message = error?.message || "Failed to load model.";
+      setLlmStatus(message);
+      setLlmModelLoaded(false);
+      Toast.show({ type: "error", text1: message, text1Style: toastStyle });
+    } finally {
+      setLlmLoading(false);
+    }
+  }
+
+  async function handleUnloadLlmModel() {
+    await unloadLlamaModel();
+    setLlmModelLoaded(false);
+    setLlmRuntimeInfo(null);
+    setLlmStatus("Model released.");
+    Toast.show({ type: "success", text1: "Local model unloaded.", text1Style: toastStyle });
+  }
+
+  async function handleGenerateWithLlm() {
+    if (!llmModelLoaded) {
+      Toast.show({ type: "info", text1: "Load a model first.", text1Style: toastStyle });
+      return;
+    }
+    if (!llmPrompt.trim()) {
+      Toast.show({ type: "info", text1: "Prompt is empty.", text1Style: toastStyle });
+      return;
+    }
+
+    setLlmGenerating(true);
+    setLlmResponse("");
+    setLlmStatus("Generating response…");
+
+    try {
+      const finalText = await generateLlamaResponse({
+        prompt: llmPrompt,
+        maxTokens: 256,
+        temperature: 0.7,
+        onToken: (tokenData) => {
+          if (tokenData?.accumulated_text != null) {
+            setLlmResponse(tokenData.accumulated_text);
+          } else if (tokenData?.token) {
+            setLlmResponse((prev) => `${prev}${tokenData.token}`);
+          }
+        },
+      });
+
+      if (finalText) setLlmResponse(finalText);
+      setLlmStatus("Generation completed.");
+    } catch (error) {
+      const message = error?.message || "Generation failed.";
+      setLlmStatus(message);
+      Toast.show({ type: "error", text1: message, text1Style: toastStyle });
+    } finally {
+      setLlmGenerating(false);
+    }
+  }
+
   if (!fontsLoaded) return null;
 
   return (
@@ -1365,6 +1497,115 @@ export default function App() {
             ) : (
               <Text style={styles.emptyHint}>Tap a day or enter MM/DD to set a range.</Text>
             )}
+          </View>
+
+          <View style={styles.llmCard}>
+            <Pressable style={styles.llmHeaderRow} onPress={() => setShowLlmPanel((v) => !v)}>
+              <View style={styles.llmHeaderLeft}>
+                <Text style={styles.llmTitle}>Offline LLM (llama.rn)</Text>
+                <Text style={styles.llmSubtitle}>
+                  {llmModelLoaded ? "Loaded" : "Not loaded"} · {Platform.OS}
+                </Text>
+              </View>
+              <Text style={styles.llmToggle}>{showLlmPanel ? "Hide" : "Show"}</Text>
+            </Pressable>
+
+            {showLlmPanel ? (
+              <>
+                <Text style={styles.llmHint}>
+                  Use Hugging Face shorthand (e.g. unsloth/Qwen3-0.6B-GGUF:Q4_K_M) or a local GGUF file path.
+                </Text>
+                {Platform.OS === "web" ? (
+                  <Text style={styles.llmWarning}>
+                    Local inference is native-only. Build/install Android APK or iOS app to use llama.rn.
+                  </Text>
+                ) : null}
+
+                <Text style={styles.llmLabel}>HF model id / shorthand</Text>
+                <TextInput
+                  style={styles.llmInput}
+                  value={llmModelId}
+                  onChangeText={setLlmModelId}
+                  placeholder="unsloth/Qwen3-0.6B-GGUF:Q4_K_M"
+                  placeholderTextColor="rgba(232,213,183,0.25)"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <View style={styles.llmButtonRow}>
+                  <Pressable
+                    style={[styles.llmActionButton, llmLoading ? styles.llmActionButtonDisabled : null]}
+                    disabled={llmLoading}
+                    onPress={handleDownloadHfModel}
+                  >
+                    <Text style={styles.llmActionButtonText}>
+                      {llmLoading ? "Working…" : "Download from HF"}
+                    </Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.llmProgressText}>Download: {Math.round(llmDownloadProgress)}%</Text>
+
+                <Text style={styles.llmLabel}>Local model path (.gguf)</Text>
+                <TextInput
+                  style={styles.llmInput}
+                  value={llmModelPath}
+                  onChangeText={setLlmModelPath}
+                  placeholder="file:///data/user/0/<package>/files/models/model.gguf"
+                  placeholderTextColor="rgba(232,213,183,0.25)"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <View style={styles.llmButtonRow}>
+                  <Pressable
+                    style={[styles.llmActionButton, llmLoading ? styles.llmActionButtonDisabled : null]}
+                    disabled={llmLoading}
+                    onPress={handleLoadLlmModel}
+                  >
+                    <Text style={styles.llmActionButtonText}>{llmLoading ? "Loading…" : "Load Model"}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.llmSecondaryButton, !llmModelLoaded ? styles.llmActionButtonDisabled : null]}
+                    disabled={!llmModelLoaded}
+                    onPress={handleUnloadLlmModel}
+                  >
+                    <Text style={styles.llmSecondaryButtonText}>Unload</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.llmProgressText}>Load: {Math.round(llmLoadProgress)}%</Text>
+                <Text style={styles.llmStatusText}>{llmStatus}</Text>
+                {llmRuntimeInfo ? (
+                  <Text style={styles.llmRuntimeText}>
+                    GPU: {llmRuntimeInfo.gpu ? "yes" : "no"}
+                    {llmRuntimeInfo.reasonNoGPU ? ` (${llmRuntimeInfo.reasonNoGPU})` : ""}
+                  </Text>
+                ) : null}
+
+                <Text style={styles.llmLabel}>Prompt</Text>
+                <TextInput
+                  style={[styles.llmInput, styles.llmPromptInput]}
+                  value={llmPrompt}
+                  onChangeText={setLlmPrompt}
+                  placeholder="Ask your offline model…"
+                  placeholderTextColor="rgba(232,213,183,0.25)"
+                  multiline
+                />
+                <Pressable
+                  style={[styles.llmActionButton, llmGenerating ? styles.llmActionButtonDisabled : null]}
+                  disabled={llmGenerating}
+                  onPress={handleGenerateWithLlm}
+                >
+                  <Text style={styles.llmActionButtonText}>
+                    {llmGenerating ? "Generating…" : "Generate Response"}
+                  </Text>
+                </Pressable>
+
+                <View style={styles.llmResponseWrap}>
+                  <Text style={styles.llmResponseLabel}>Response</Text>
+                  <Text style={styles.llmResponseText}>
+                    {llmResponse || "No output yet."}
+                  </Text>
+                </View>
+              </>
+            ) : null}
           </View>
 
           {savedRangeTitle ? (
@@ -1865,6 +2106,159 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "DMMono_400Regular",
     textAlign: "center",
+  },
+  llmCard: {
+    borderWidth: 1,
+    borderColor: "rgba(96,200,240,0.22)",
+    borderRadius: 14,
+    backgroundColor: "rgba(96,200,240,0.06)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  llmHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  llmHeaderLeft: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  llmTitle: {
+    color: "rgba(210,235,255,0.95)",
+    fontSize: 13,
+    fontFamily: "DMMono_500Medium",
+    letterSpacing: 0.4,
+  },
+  llmSubtitle: {
+    color: "rgba(96,200,240,0.85)",
+    fontSize: 11,
+    fontFamily: "DMMono_400Regular",
+    marginTop: 2,
+  },
+  llmToggle: {
+    color: "rgba(232,213,183,0.8)",
+    fontSize: 11,
+    fontFamily: "DMMono_500Medium",
+  },
+  llmHint: {
+    color: "rgba(210,220,235,0.78)",
+    fontSize: 11,
+    fontFamily: "DMMono_400Regular",
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  llmWarning: {
+    color: "rgba(245,166,35,0.9)",
+    fontSize: 11,
+    fontFamily: "DMMono_400Regular",
+    marginBottom: 8,
+  },
+  llmLabel: {
+    color: "rgba(96,200,240,0.95)",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    fontFamily: "DMMono_500Medium",
+    marginBottom: 6,
+    marginTop: 6,
+  },
+  llmInput: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(96,200,240,0.35)",
+    backgroundColor: "rgba(10,10,14,0.45)",
+    color: "#e8d5b7",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    fontFamily: "DMMono_400Regular",
+    fontSize: 12,
+  },
+  llmPromptInput: {
+    minHeight: 94,
+    textAlignVertical: "top",
+  },
+  llmButtonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  llmActionButton: {
+    backgroundColor: "rgba(96,200,240,0.23)",
+    borderWidth: 1,
+    borderColor: "rgba(96,200,240,0.8)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  llmSecondaryButton: {
+    backgroundColor: "rgba(255,255,255,0.07)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  llmActionButtonDisabled: {
+    opacity: 0.45,
+  },
+  llmActionButtonText: {
+    color: "#e8d5b7",
+    fontFamily: "DMMono_500Medium",
+    fontSize: 12,
+  },
+  llmSecondaryButtonText: {
+    color: "rgba(232,213,183,0.88)",
+    fontFamily: "DMMono_500Medium",
+    fontSize: 12,
+  },
+  llmProgressText: {
+    color: "rgba(232,213,183,0.58)",
+    fontFamily: "DMMono_400Regular",
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  llmStatusText: {
+    color: "rgba(210,220,235,0.9)",
+    fontFamily: "DMMono_400Regular",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  llmRuntimeText: {
+    color: "rgba(70,200,110,0.85)",
+    fontFamily: "DMMono_400Regular",
+    fontSize: 11,
+    marginTop: 4,
+  },
+  llmResponseWrap: {
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(0,0,0,0.28)",
+    padding: 10,
+  },
+  llmResponseLabel: {
+    color: "rgba(232,213,183,0.7)",
+    fontFamily: "DMMono_500Medium",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
+    marginBottom: 6,
+  },
+  llmResponseText: {
+    color: "#e8d5b7",
+    fontFamily: "DMMono_400Regular",
+    fontSize: 12,
+    lineHeight: 18,
   },
   savedTitle: {
     color: "rgba(245,166,35,0.95)",
