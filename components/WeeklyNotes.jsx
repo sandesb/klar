@@ -151,6 +151,24 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
   const [imageUploading, setImageUploading] = useState(false);
   const noteImgInputRef = useRef(null);
   const [confirmDeleteImg, setConfirmDeleteImg] = useState(null); // filename | null
+  const [lightboxIdx, setLightboxIdx] = useState(null); // null = closed, number = index into noteImages
+
+  // Collect ordered list of image filenames present in the note text
+  const noteImages = [...text.matchAll(/!\[\]\(([\w.\-]+)\)/g)].map(m => m[1]);
+
+  // Keyboard navigation for lightbox
+  useEffect(() => {
+    if (lightboxIdx === null) return;
+    function onKey(e) {
+      if (e.key === "Escape") { setLightboxIdx(null); return; }
+      if (e.key === "ArrowRight" || e.key === "ArrowDown")
+        setLightboxIdx(idx => (idx + 1) % noteImages.length);
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+        setLightboxIdx(idx => (idx - 1 + noteImages.length) % noteImages.length);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightboxIdx, noteImages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function uploadAndInsert(file) {
     if (!file || !file.type.startsWith("image/")) return;
@@ -431,32 +449,6 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
             }}>
               {DAY_NAMES[date.getDay()]}
             </span>
-            <button
-              type="button"
-              title={highlightsData ? "Double-click to refresh highlights" : "Generate highlights"}
-              onClick={(e) => { e.stopPropagation(); runHighlights(); }}
-              onDoubleClick={(e) => { e.stopPropagation(); runHighlights(true); }}
-              disabled={!hasNote || highlightsLoading}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                background: highlightsLoading ? "rgba(245,166,35,0.09)" : "rgba(245,166,35,0.06)",
-                border: "1px solid rgba(245,166,35,0.18)",
-                borderRadius: 999,
-                padding: "2px 10px",
-                cursor: !hasNote ? "not-allowed" : "pointer",
-                opacity: !hasNote ? 0.45 : 1,
-                color: "rgba(245,166,35,0.7)",
-                fontFamily: FONT_MONO,
-                fontSize: 9.5,
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-              }}
-            >
-              {highlightsLoading ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> : <Sparkles size={12} />}
-              Highlights
-            </button>
             {isToday && (
               <span style={{
                 fontFamily: FONT_MONO, fontSize: 8.5, letterSpacing: "0.12em", textTransform: "uppercase",
@@ -776,11 +768,11 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                     onDoubleClick={(e) => { e.stopPropagation(); runHighlights(true); }}
                     style={{
                       background: panel === "highlights" ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.03)",
-                      border: panel === "highlights" ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(255,255,255,0.08)",
+                      border: panel === "highlights" ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(70,200,110,0.45)",
                       borderRadius: 999,
                       padding: "4px 10px",
                       cursor: "pointer",
-                      color: panel === "highlights" ? "rgba(245,166,35,0.9)" : "rgba(232,213,183,0.35)",
+                      color: panel === "highlights" ? "rgba(245,166,35,0.9)" : "rgba(70,200,110,0.65)",
                       fontFamily: FONT_MONO,
                       fontSize: 9.5,
                       letterSpacing: "0.14em",
@@ -985,41 +977,25 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                     if (m) {
                       const fn = m[1];
                       const src = NOTE_IMG_BASE + fn;
+                      const imgIdx = noteImages.indexOf(fn);
                       return (
-                        <span key={i} style={{ position: "relative", display: "inline-block", verticalAlign: "middle", margin: "3px 5px" }}>
-                          <img
-                            src={src}
-                            alt={fn}
-                            style={{
-                              maxHeight: 160,
-                              maxWidth: "100%",
-                              borderRadius: 8,
-                              display: "block",
-                              border: "1px solid rgba(245,166,35,0.18)",
-                              cursor: "pointer",
-                            }}
-                            onClick={() => window.open(src, "_blank")}
-                            title="Click to open full size"
-                          />
-                          <button
-                            type="button"
-                            title="Delete image"
-                            onClick={(e) => { e.stopPropagation(); setConfirmDeleteImg(fn); }}
-                            style={{
-                              position: "absolute", top: -7, right: -7,
-                              width: 20, height: 20,
-                              background: "rgba(200,40,40,0.9)",
-                              border: "1.5px solid rgba(255,255,255,0.25)",
-                              borderRadius: "50%",
-                              cursor: "pointer",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              padding: 0, lineHeight: 1,
-                              color: "#fff", fontSize: 11, fontWeight: 700,
-                            }}
-                          >
-                            ✕
-                          </button>
-                        </span>
+                        <img
+                          key={i}
+                          src={src}
+                          alt={fn}
+                          style={{
+                            maxHeight: 160,
+                            maxWidth: "100%",
+                            borderRadius: 8,
+                            verticalAlign: "middle",
+                            margin: "3px 5px",
+                            display: "inline-block",
+                            border: "1px solid rgba(245,166,35,0.18)",
+                            cursor: "zoom-in",
+                          }}
+                          onClick={() => setLightboxIdx(imgIdx >= 0 ? imgIdx : 0)}
+                          title="Click to view"
+                        />
                       );
                     }
                     return <span key={i}>{part}</span>;
@@ -1075,6 +1051,106 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                   </button>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Image lightbox ── */}
+      {lightboxIdx !== null && noteImages.length > 0 && (
+        <div
+          onClick={() => setLightboxIdx(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 10000,
+            background: "rgba(0,0,0,0.88)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          {/* Prev arrow */}
+          {noteImages.length > 1 && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); setLightboxIdx((lightboxIdx - 1 + noteImages.length) % noteImages.length); }}
+              style={{
+                position: "fixed", left: 18, top: "50%", transform: "translateY(-50%)",
+                zIndex: 10001,
+                background: "rgba(245,166,35,0.12)",
+                border: "1px solid rgba(245,166,35,0.3)",
+                borderRadius: "50%",
+                width: 44, height: 44,
+                cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#e8d5b7", fontSize: 20,
+              }}
+            >
+              ‹
+            </button>
+          )}
+
+          {/* Image */}
+          <img
+            src={NOTE_IMG_BASE + noteImages[lightboxIdx]}
+            alt={noteImages[lightboxIdx]}
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: "90vw",
+              maxHeight: "85vh",
+              borderRadius: 12,
+              boxShadow: "0 12px 60px rgba(0,0,0,0.7)",
+              border: "1px solid rgba(245,166,35,0.2)",
+              display: "block",
+              objectFit: "contain",
+            }}
+          />
+
+          {/* Next arrow */}
+          {noteImages.length > 1 && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); setLightboxIdx((lightboxIdx + 1) % noteImages.length); }}
+              style={{
+                position: "fixed", right: 18, top: "50%", transform: "translateY(-50%)",
+                zIndex: 10001,
+                background: "rgba(245,166,35,0.12)",
+                border: "1px solid rgba(245,166,35,0.3)",
+                borderRadius: "50%",
+                width: 44, height: 44,
+                cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#e8d5b7", fontSize: 20,
+              }}
+            >
+              ›
+            </button>
+          )}
+
+          {/* Close button */}
+          <button
+            type="button"
+            onClick={() => setLightboxIdx(null)}
+            style={{
+              position: "fixed", top: 16, right: 16,
+              zIndex: 10001,
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: "50%",
+              width: 36, height: 36,
+              cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "rgba(232,213,183,0.7)", fontSize: 16,
+            }}
+          >
+            ✕
+          </button>
+
+          {/* Counter */}
+          {noteImages.length > 1 && (
+            <div style={{
+              position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)",
+              fontFamily: "'DM Mono', monospace", fontSize: 11, letterSpacing: "0.12em",
+              color: "rgba(232,213,183,0.45)",
+            }}>
+              {lightboxIdx + 1} / {noteImages.length}
             </div>
           )}
         </div>
@@ -1657,7 +1733,7 @@ export default function WeeklyNotes() {
           · notes sync to cloud · navigate weeks with the arrows ·
         </p>
 
-        {/* Chat trigger (bottom-left, sticky) */}
+        {/* Chat trigger (bottom-right, sticky) */}
         {!chatOpen && (
           <button
             type="button"
@@ -1665,7 +1741,7 @@ export default function WeeklyNotes() {
             style={{
               position: "fixed",
               bottom: 18,
-              left: 18,
+              right: 18,
               zIndex: 4000,
               display: "inline-flex",
               alignItems: "center",
@@ -1692,7 +1768,7 @@ export default function WeeklyNotes() {
             style={{
               position: "fixed",
               bottom: 18,
-              left: 18,
+              right: 18,
               zIndex: 4000,
               width: "min(420px, 92vw)",
               height: "70vh",
