@@ -708,6 +708,7 @@ export default function App() {
   const [llmGenerating, setLlmGenerating] = useState(false);
   const [llmModelLoaded, setLlmModelLoaded] = useState(false);
   const [llmRuntimeInfo, setLlmRuntimeInfo] = useState(null);
+  const llmWebUnsupported = Platform.OS === "web";
 
   useEffect(() => {
     async function loadInitialData() {
@@ -1515,7 +1516,7 @@ export default function App() {
                 <Text style={styles.llmHint}>
                   Use Hugging Face shorthand (e.g. unsloth/Qwen3-0.6B-GGUF:Q4_K_M) or a local GGUF file path.
                 </Text>
-                {Platform.OS === "web" ? (
+                {llmWebUnsupported ? (
                   <Text style={styles.llmWarning}>
                     Local inference is native-only. Build/install Android APK or iOS app to use llama.rn.
                   </Text>
@@ -1533,12 +1534,12 @@ export default function App() {
                 />
                 <View style={styles.llmButtonRow}>
                   <Pressable
-                    style={[styles.llmActionButton, llmLoading ? styles.llmActionButtonDisabled : null]}
-                    disabled={llmLoading}
+                    style={[styles.llmActionButton, (llmLoading || llmWebUnsupported) ? styles.llmActionButtonDisabled : null]}
+                    disabled={llmLoading || llmWebUnsupported}
                     onPress={handleDownloadHfModel}
                   >
                     <Text style={styles.llmActionButtonText}>
-                      {llmLoading ? "Working…" : "Download from HF"}
+                      {llmWebUnsupported ? "Download from HF (native only)" : llmLoading ? "Working…" : "Download from HF"}
                     </Text>
                   </Pressable>
                 </View>
@@ -1556,11 +1557,13 @@ export default function App() {
                 />
                 <View style={styles.llmButtonRow}>
                   <Pressable
-                    style={[styles.llmActionButton, llmLoading ? styles.llmActionButtonDisabled : null]}
-                    disabled={llmLoading}
+                    style={[styles.llmActionButton, (llmLoading || llmWebUnsupported) ? styles.llmActionButtonDisabled : null]}
+                    disabled={llmLoading || llmWebUnsupported}
                     onPress={handleLoadLlmModel}
                   >
-                    <Text style={styles.llmActionButtonText}>{llmLoading ? "Loading…" : "Load Model"}</Text>
+                    <Text style={styles.llmActionButtonText}>
+                      {llmWebUnsupported ? "Load Model (native only)" : llmLoading ? "Loading…" : "Load Model"}
+                    </Text>
                   </Pressable>
                   <Pressable
                     style={[styles.llmSecondaryButton, !llmModelLoaded ? styles.llmActionButtonDisabled : null]}
@@ -1589,12 +1592,12 @@ export default function App() {
                   multiline
                 />
                 <Pressable
-                  style={[styles.llmActionButton, llmGenerating ? styles.llmActionButtonDisabled : null]}
-                  disabled={llmGenerating}
+                  style={[styles.llmActionButton, (llmGenerating || llmWebUnsupported) ? styles.llmActionButtonDisabled : null]}
+                  disabled={llmGenerating || llmWebUnsupported}
                   onPress={handleGenerateWithLlm}
                 >
                   <Text style={styles.llmActionButtonText}>
-                    {llmGenerating ? "Generating…" : "Generate Response"}
+                    {llmWebUnsupported ? "Generate (native only)" : llmGenerating ? "Generating…" : "Generate Response"}
                   </Text>
                 </Pressable>
 
