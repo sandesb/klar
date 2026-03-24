@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, Plus, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, Plus, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon, Trash2, Target, Circle, CircleCheck } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
 import { fetchChatCompletion } from "../utils/groqChat.js";
 import { fetchAllPrompts, upsertPrompt, uploadNoteImage, deleteNoteImage, NOTE_IMG_BASE, createChatThread, fetchLatestChatThread, fetchChatThreadsList, fetchChatThreadById, upsertChatThreadMessages, deleteChatThreadById } from "../supabaseClient.js";
+import { loadGoalsForDay, saveGoalsForDay, createGoalId, loadWeeklyGoals, saveWeeklyGoals } from "../utils/goalsStorage.js";
 import { transcribeAudio } from "../utils/groqTranscribe.js";
 import { speak, stopSpeaking, unlockAudio } from "../utils/groqTts.js";
 const FONT_MONO = "'DM Mono', monospace";
@@ -57,7 +58,10 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
   const key = toDateKey(date);
   const [text, setText] = useState(initialNote ?? "");
   const [isEditing, setIsEditing] = useState(false);
-  const [panel, setPanel] = useState("note"); // 'note' | 'highlights'
+  const [panel, setPanel] = useState("note"); // 'note' | 'highlights' | 'goals'
+  const [goals, setGoals] = useState([]);
+  const [goalAdding, setGoalAdding] = useState(false);
+  const [newGoalText, setNewGoalText] = useState("");
   const [highlightsLoading, setHighlightsLoading] = useState(false);
   const [highlightsRaw, setHighlightsRaw] = useState("");
   const [highlightsData, setHighlightsData] = useState(initialHighlights ?? null);
@@ -258,6 +262,16 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
     setHighlightsData(initialHighlights ?? null);
   }, [initialHighlights]);
 
+  useEffect(() => {
+    let cancelled = false;
+    loadGoalsForDay(key).then((g) => {
+      if (!cancelled) setGoals(g);
+    }).catch(() => {});
+    setGoalAdding(false);
+    setNewGoalText("");
+    return () => { cancelled = true; };
+  }, [key]);
+
   const debouncedSave = useDebounce(async (k, t) => {
     try {
       await saveNoteText(k, t);
@@ -296,6 +310,34 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
     const val = e.target.value;
     setText(val);
     debouncedSave(key, val);
+  }
+
+  function persistGoals(next) {
+    setGoals(next);
+    saveGoalsForDay(key, next).catch(() => {});
+  }
+
+  async function handleSaveNewGoal() {
+    const text = newGoalText.trim();
+    if (!text) return;
+    const next = [...goals, { id: createGoalId(), text, done: false }];
+    persistGoals(next);
+    setNewGoalText("");
+    setGoalAdding(false);
+  }
+
+  function handleToggleGoal(goalId) {
+    const next = goals.map((g) => (g.id === goalId ? { ...g, done: !g.done } : g));
+    persistGoals(next);
+  }
+
+  function handleDeleteGoal(goal) {
+    if (!goal.done) {
+      toast("Mark the goal done first", { style: { fontFamily: "'DM Mono', monospace" } });
+      return;
+    }
+    persistGoals(goals.filter((g) => g.id !== goal.id));
+    toast.success("Goal removed", { style: { fontFamily: "'DM Mono', monospace" } });
   }
 
   async function runHighlights(force = false) {
@@ -740,63 +782,84 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
               borderRadius: 12,
               padding: "16px 18px",
             }}>
-              {/* Panel switch */}
-              {hasNote && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                  <button
-                    type="button"
-                    onClick={() => setPanel("note")}
-                    style={{
-                      background: panel === "note" ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.03)",
-                      border: panel === "note" ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: 999,
-                      padding: "4px 10px",
-                      cursor: "pointer",
-                      color: panel === "note" ? "rgba(245,166,35,0.9)" : "rgba(232,213,183,0.35)",
-                      fontFamily: FONT_MONO,
-                      fontSize: 9.5,
-                      letterSpacing: "0.14em",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Note
-                  </button>
-                  <button
-                    type="button"
-                    title={highlightsData ? "Double-click to refresh highlights" : "Generate highlights"}
-                    onClick={() => runHighlights()}
-                    onDoubleClick={(e) => { e.stopPropagation(); runHighlights(true); }}
-                    style={{
-                      background: panel === "highlights" ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.03)",
-                      border: panel === "highlights" ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(70,200,110,0.45)",
-                      borderRadius: 999,
-                      padding: "4px 10px",
-                      cursor: "pointer",
-                      color: panel === "highlights" ? "rgba(245,166,35,0.9)" : "rgba(70,200,110,0.65)",
-                      fontFamily: FONT_MONO,
-                      fontSize: 9.5,
-                      letterSpacing: "0.14em",
-                      textTransform: "uppercase",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <Sparkles size={12} />
-                    Highlights
-                  </button>
-                  {highlightsLoading && (
-                    <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <Loader2 size={14} color="rgba(245,166,35,0.65)" style={{ animation: "spin 0.8s linear infinite" }} />
-                      <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em", color: "rgba(245,166,35,0.55)" }}>
-                        Summarizing…
-                      </span>
+              {/* Panel switch: Goals | Note | Highlights (every day) */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  title="Daily goals"
+                  onClick={() => setPanel("goals")}
+                  style={{
+                    background: panel === "goals" ? "rgba(200,40,40,0.18)" : "rgba(255,255,255,0.03)",
+                    border: panel === "goals" ? "1px solid rgba(220,70,70,0.65)" : "1px solid rgba(200,60,60,0.55)",
+                    borderRadius: 999,
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    color: panel === "goals" ? "rgba(255,140,140,0.95)" : "rgba(240,100,100,0.88)",
+                    fontFamily: FONT_MONO,
+                    fontSize: 9.5,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Target size={12} />
+                  Goals
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPanel("note")}
+                  style={{
+                    background: panel === "note" ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.03)",
+                    border: panel === "note" ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 999,
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    color: panel === "note" ? "rgba(245,166,35,0.9)" : "rgba(232,213,183,0.35)",
+                    fontFamily: FONT_MONO,
+                    fontSize: 9.5,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Note
+                </button>
+                <button
+                  type="button"
+                  title={highlightsData ? "Double-click to refresh highlights" : "Generate highlights"}
+                  onClick={() => runHighlights()}
+                  onDoubleClick={(e) => { e.stopPropagation(); runHighlights(true); }}
+                  style={{
+                    background: panel === "highlights" ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.03)",
+                    border: panel === "highlights" ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(70,200,110,0.45)",
+                    borderRadius: 999,
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    color: panel === "highlights" ? "rgba(245,166,35,0.9)" : "rgba(70,200,110,0.65)",
+                    fontFamily: FONT_MONO,
+                    fontSize: 9.5,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Sparkles size={12} />
+                  Highlights
+                </button>
+                {highlightsLoading && panel === "highlights" && (
+                  <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Loader2 size={14} color="rgba(245,166,35,0.65)" style={{ animation: "spin 0.8s linear infinite" }} />
+                    <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em", color: "rgba(245,166,35,0.55)" }}>
+                      Summarizing…
                     </span>
-                  )}
-                </div>
-              )}
+                  </span>
+                )}
+              </div>
 
-              {panel === "highlights" && hasNote ? (
+              {panel === "highlights" && hasNote && (
                 <>
                   {highlightsErr && (
                     <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: "rgba(220,80,80,0.85)", marginBottom: 10 }}>
@@ -962,7 +1025,155 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                     </div>
                   )}
                 </>
-              ) : hasNote ? (
+              )}
+              {panel === "highlights" && !hasNote && (
+                <div style={{
+                  fontFamily: FONT_MONO,
+                  fontSize: 12.5,
+                  lineHeight: 1.8,
+                  color: "rgba(232,213,183,0.45)",
+                }}>
+                  Write something in your note first to use AI Highlights.
+                </div>
+              )}
+              {panel === "goals" && (
+                <div>
+                  <div style={{
+                    fontFamily: FONT_MONO,
+                    fontSize: 10,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: "rgba(245,166,35,0.75)",
+                    marginBottom: 10,
+                  }}>
+                    Goals · {DAY_NAMES[date.getDay()]} {date.getDate()} {MONTH_NAMES[date.getMonth()]}
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT_MONO, fontSize: 12 }}>
+                    <tbody>
+                      {goals.map((g) => (
+                        <tr key={g.id}>
+                          <td style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.08)", width: 36, verticalAlign: "middle" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleGoal(g.id)}
+                              title={g.done ? "Mark undone" : "Mark done"}
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                padding: 4,
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                color: "rgba(232,213,183,0.7)",
+                              }}
+                              aria-label={g.done ? "Mark undone" : "Mark done"}
+                            >
+                              {g.done ? <CircleCheck size={18} color="rgba(70,200,110,0.9)" /> : <Circle size={18} />}
+                            </button>
+                          </td>
+                          <td style={{
+                            padding: "8px 10px",
+                            borderBottom: "1px solid rgba(255,255,255,0.08)",
+                            verticalAlign: "middle",
+                            textDecoration: g.done ? "line-through" : "none",
+                            color: g.done ? "rgba(232,213,183,0.45)" : "rgba(232,213,183,0.9)",
+                          }}>
+                            {g.text}
+                          </td>
+                          <td style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.08)", width: 36, textAlign: "right", verticalAlign: "middle" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteGoal(g)}
+                              title={g.done ? "Remove goal" : "Finish the goal first to remove"}
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                padding: 4,
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                color: g.done ? "rgba(200,80,80,0.9)" : "rgba(232,213,183,0.35)",
+                              }}
+                              aria-label="Remove goal"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.08)", width: 36, verticalAlign: "middle" }}>
+                          <button
+                            type="button"
+                            onClick={() => setGoalAdding(true)}
+                            title="Add goal"
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              padding: 4,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              color: "rgba(232,213,183,0.7)",
+                            }}
+                            aria-label="Add goal"
+                          >
+                            <Plus size={18} />
+                          </button>
+                        </td>
+                        <td style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.08)", verticalAlign: "middle" }} colSpan={2}>
+                          {goalAdding ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <input
+                                type="text"
+                                value={newGoalText}
+                                onChange={(e) => setNewGoalText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleSaveNewGoal();
+                                  if (e.key === "Escape") { setGoalAdding(false); setNewGoalText(""); }
+                                }}
+                                placeholder="New goal…"
+                                autoFocus
+                                style={{
+                                  flex: 1,
+                                  minWidth: 120,
+                                  background: "rgba(255,255,255,0.06)",
+                                  border: "1px solid rgba(245,166,35,0.3)",
+                                  borderRadius: 8,
+                                  padding: "6px 10px",
+                                  color: "#e8d5b7",
+                                  fontFamily: FONT_MONO,
+                                  fontSize: 12,
+                                  outline: "none",
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSaveNewGoal}
+                                title="Save"
+                                style={{ background: "transparent", border: "none", padding: 4, cursor: "pointer", color: "rgba(70,200,110,0.9)", display: "inline-flex", alignItems: "center" }}
+                                aria-label="Save goal"
+                              >
+                                <Check size={18} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setGoalAdding(false); setNewGoalText(""); }}
+                                title="Cancel"
+                                style={{ background: "transparent", border: "none", padding: 4, cursor: "pointer", color: "rgba(200,80,80,0.9)", display: "inline-flex", alignItems: "center" }}
+                                aria-label="Cancel"
+                              >
+                                <X size={18} />
+                              </button>
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {panel === "note" && hasNote && (
                 <div style={{
                   fontFamily: FONT_MONO,
                   fontSize: 13.5,
@@ -1001,7 +1212,8 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                     return <span key={i}>{part}</span>;
                   })}
                 </div>
-              ) : (
+              )}
+              {panel === "note" && !hasNote && (
                 <p style={{
                   fontFamily: FONT_MONO, fontSize: 12.5, lineHeight: 1.7,
                   color: "rgba(232,213,183,0.22)", margin: 0,
@@ -1021,7 +1233,7 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                   </button>
                 </p>
               )}
-              {hasNote && (
+              {hasNote && panel === "note" && (
                 <div style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                   marginTop: 14, paddingTop: 10,
@@ -1239,6 +1451,81 @@ export default function WeeklyNotes() {
   const todayKey = toDateKey(today);
   const isCurrentWeek = toDateKey(weekStart) === toDateKey(startOfWeek(today));
   const weekEndKey = toDateKey(new Date(weekStart.getTime() + 6 * 86400000));
+  const weekKey = toDateKey(weekStart); // used as key for weekly goals (prefix added in storage)
+
+  // ── Weekly goals ───────────────────────────────────────────────
+  const [weeklyGoalsOpen, setWeeklyGoalsOpen] = useState(false);
+  const [weeklyGoals, setWeeklyGoals] = useState([]);
+  const [weeklyGoalAdding, setWeeklyGoalAdding] = useState(false);
+  const [newWeeklyGoalText, setNewWeeklyGoalText] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    loadWeeklyGoals(weekKey).then((g) => {
+      if (!cancelled) setWeeklyGoals(g);
+    }).catch(() => {});
+    setWeeklyGoalAdding(false);
+    setNewWeeklyGoalText("");
+    return () => { cancelled = true; };
+  }, [weekKey]);
+
+  function persistWeeklyGoals(updated) {
+    setWeeklyGoals(updated);
+    saveWeeklyGoals(weekKey, updated).catch(() => {});
+  }
+
+  function handleAddWeeklyGoal() {
+    const trimmed = newWeeklyGoalText.trim();
+    if (!trimmed) return;
+    const updated = [...weeklyGoals, { id: createGoalId(), text: trimmed, done: false }];
+    persistWeeklyGoals(updated);
+    setNewWeeklyGoalText("");
+    setWeeklyGoalAdding(false);
+  }
+
+  function handleToggleWeeklyGoal(id) {
+    persistWeeklyGoals(weeklyGoals.map((g) => g.id === id ? { ...g, done: !g.done } : g));
+  }
+
+  function handleDeleteWeeklyGoal(goal) {
+    if (!goal.done) {
+      toast("Mark the goal as done first to remove it.", {
+        style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.35)", fontFamily: "'DM Mono', monospace", fontSize: "12px" },
+      });
+      return;
+    }
+    persistWeeklyGoals(weeklyGoals.filter((g) => g.id !== goal.id));
+  }
+
+  async function handleImportWeeklyGoals() {
+    if (weeklyGoals.length === 0) {
+      toast("No weekly goals to import.", {
+        style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.35)", fontFamily: "'DM Mono', monospace", fontSize: "12px" },
+      });
+      return;
+    }
+    try {
+      await Promise.all(days.map(async (day) => {
+        const dk = toDateKey(day);
+        const existing = await loadGoalsForDay(dk);
+        const existingTexts = new Set(existing.map((g) => g.text.trim().toLowerCase()));
+        const toAdd = weeklyGoals
+          .filter((g) => !existingTexts.has(g.text.trim().toLowerCase()))
+          .map((g) => ({ id: createGoalId(), text: g.text, done: false }));
+        if (toAdd.length > 0) {
+          await saveGoalsForDay(dk, [...existing, ...toAdd]);
+        }
+      }));
+      toast(`Imported ${weeklyGoals.length} goal${weeklyGoals.length !== 1 ? "s" : ""} to all 7 days ✦`, {
+        style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.35)", fontFamily: "'DM Mono', monospace", fontSize: "12px", letterSpacing: "0.05em" },
+      });
+      setTimeout(() => {
+        window.location.assign("/note");
+      }, 120);
+    } catch {
+      toast.error("Import failed — check connection.");
+    }
+  }
 
   // ── Chat UI state ─────────────────────────────────────────────
   const [chatOpen, setChatOpen] = useState(false);
@@ -1782,7 +2069,23 @@ export default function WeeklyNotes() {
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <button
+              type="button"
+              title="Weekly goals"
+              onClick={() => setWeeklyGoalsOpen((v) => !v)}
+              style={{
+                background: weeklyGoalsOpen ? "rgba(200,40,40,0.18)" : "rgba(255,255,255,0.03)",
+                border: weeklyGoalsOpen ? "1px solid rgba(220,70,70,0.65)" : "1px solid rgba(200,60,60,0.55)",
+                borderRadius: 8, padding: "7px 12px", cursor: "pointer",
+                color: weeklyGoalsOpen ? "rgba(255,140,140,0.95)" : "rgba(240,100,100,0.88)",
+                fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em",
+                display: "flex", alignItems: "center", gap: 5,
+                transition: "all 0.15s",
+              }}
+            >
+              <Target size={12} /> Goals
+            </button>
             {!isCurrentWeek && (
               <button
                 type="button"
@@ -1817,6 +2120,141 @@ export default function WeeklyNotes() {
             </button>
           </div>
         </div>
+
+        {/* ── Weekly Goals panel ── */}
+        {weeklyGoalsOpen && (
+          <div style={{
+            marginBottom: 16,
+            background: "rgba(200,40,40,0.06)",
+            border: "1px solid rgba(200,60,60,0.3)",
+            borderRadius: 14,
+            padding: "18px 20px",
+          }}>
+            {/* Panel header */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              marginBottom: 14,
+            }}>
+              <div style={{
+                fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.2em",
+                textTransform: "uppercase", color: "rgba(245,166,35,0.75)",
+                display: "flex", alignItems: "center", gap: 7,
+              }}>
+                <Target size={12} color="rgba(245,166,35,0.65)" />
+                Weekly Goals · Week {weekNumber}
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button
+                  type="button"
+                  title="Import these goals into every day this week"
+                  onClick={handleImportWeeklyGoals}
+                  style={{
+                    background: "rgba(70,200,110,0.08)",
+                    border: "1px solid rgba(70,200,110,0.35)",
+                    borderRadius: 8, padding: "5px 11px", cursor: "pointer",
+                    color: "rgba(70,200,110,0.85)",
+                    fontFamily: FONT_MONO, fontSize: 9.5, letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    display: "flex", alignItems: "center", gap: 5,
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(70,200,110,0.14)"; e.currentTarget.style.color = "rgba(70,200,110,1)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(70,200,110,0.08)"; e.currentTarget.style.color = "rgba(70,200,110,0.85)"; }}
+                >
+                  <ChevronRight size={11} /> Import to all days
+                </button>
+              </div>
+            </div>
+
+            {/* Goals table */}
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT_MONO, fontSize: 12 }}>
+              <tbody>
+                {weeklyGoals.map((g) => (
+                  <tr key={g.id}>
+                    <td style={{ padding: "7px 8px", borderBottom: "1px solid rgba(255,255,255,0.06)", width: 34, verticalAlign: "middle" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleWeeklyGoal(g.id)}
+                        title={g.done ? "Mark undone" : "Mark done"}
+                        style={{ background: "transparent", border: "none", padding: 3, cursor: "pointer", display: "inline-flex", alignItems: "center", color: "rgba(232,213,183,0.7)" }}
+                      >
+                        {g.done ? <CircleCheck size={17} color="rgba(70,200,110,0.9)" /> : <Circle size={17} color="rgba(240,100,100,0.7)" />}
+                      </button>
+                    </td>
+                    <td style={{
+                      padding: "7px 8px",
+                      borderBottom: "1px solid rgba(255,255,255,0.06)",
+                      verticalAlign: "middle",
+                      textDecoration: g.done ? "line-through" : "none",
+                      color: g.done ? "rgba(232,213,183,0.4)" : "rgba(232,213,183,0.9)",
+                    }}>
+                      {g.text}
+                    </td>
+                    <td style={{ padding: "7px 8px", borderBottom: "1px solid rgba(255,255,255,0.06)", width: 34, textAlign: "right", verticalAlign: "middle" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteWeeklyGoal(g)}
+                        title={g.done ? "Remove goal" : "Mark done first to remove"}
+                        style={{ background: "transparent", border: "none", padding: 3, cursor: "pointer", display: "inline-flex", alignItems: "center", color: g.done ? "rgba(200,80,80,0.9)" : "rgba(232,213,183,0.3)" }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {/* Add row */}
+                <tr>
+                  <td style={{ padding: "7px 8px", width: 34, verticalAlign: "middle" }}>
+                    <button
+                      type="button"
+                      onClick={() => setWeeklyGoalAdding(true)}
+                      title="Add goal"
+                      style={{ background: "transparent", border: "none", padding: 3, cursor: "pointer", display: "inline-flex", alignItems: "center", color: "rgba(240,100,100,0.8)" }}
+                    >
+                      <Plus size={17} />
+                    </button>
+                  </td>
+                  <td style={{ padding: "7px 8px", verticalAlign: "middle" }} colSpan={2}>
+                    {weeklyGoalAdding ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <input
+                          type="text"
+                          value={newWeeklyGoalText}
+                          onChange={(e) => setNewWeeklyGoalText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleAddWeeklyGoal();
+                            if (e.key === "Escape") { setWeeklyGoalAdding(false); setNewWeeklyGoalText(""); }
+                          }}
+                          placeholder="New weekly goal…"
+                          autoFocus
+                          style={{
+                            flex: 1, minWidth: 140,
+                            background: "rgba(255,255,255,0.06)",
+                            border: "1px solid rgba(245,166,35,0.3)",
+                            borderRadius: 8, padding: "5px 10px",
+                            color: "#e8d5b7", fontFamily: FONT_MONO, fontSize: 12, outline: "none",
+                          }}
+                        />
+                        <button type="button" onClick={handleAddWeeklyGoal} title="Save"
+                          style={{ background: "transparent", border: "none", padding: 3, cursor: "pointer", color: "rgba(70,200,110,0.9)", display: "inline-flex", alignItems: "center" }}>
+                          <Check size={17} />
+                        </button>
+                        <button type="button" onClick={() => { setWeeklyGoalAdding(false); setNewWeeklyGoalText(""); }} title="Cancel"
+                          style={{ background: "transparent", border: "none", padding: 3, cursor: "pointer", color: "rgba(200,80,80,0.9)", display: "inline-flex", alignItems: "center" }}>
+                          <X size={17} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: "rgba(232,213,183,0.28)", fontStyle: "italic" }}>
+                        {weeklyGoals.length === 0 ? "No goals yet — click + to add" : ""}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Day cards */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
