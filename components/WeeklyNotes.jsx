@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, Plus, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon, Trash2, Target, Circle, CircleCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, Plus, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon, Trash2, Target, Circle, CircleCheck, CheckCircle2, XCircle, MinusCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
@@ -16,6 +16,84 @@ const FONT_SERIF = "'Playfair Display', serif";
 const DAY_NAMES  = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_SHORT  = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DAILY_GOALS_AUTOCHECK_INSTRUCTION = [
+  "You are verifying which daily goals were completed based only on the journal note.",
+  "Return ONLY valid JSON (no markdown, no backticks).",
+  "Schema:",
+  "{",
+  '  "results": [',
+  '    { "id": string, "completed": boolean, "evidence": string|null }',
+  "  ]",
+  "}",
+  "Rules:",
+  "- Use each goal id exactly as provided.",
+  "- completed=true only if the note explicitly indicates completion.",
+  "- If unclear, ambiguous, or only planned, set completed=false.",
+  "- Keep evidence concise; null when no evidence.",
+].join("\n");
+const DAILY_SPECIAL_INCIDENTS_INSTRUCTION = [
+  "For special_incidents sentiment classification, learn this personal preference strictly.",
+  "Expected schema for checks.special_incidents:",
+  '[ { "text": string, "sentiment": "positive"|"negative"|"neutral" } ]',
+  "",
+  "These are POSITIVE/CONSTRUCTIVE examples:",
+  "- Had a healthy lunch with dal bhaat, paneer, and potatoes, followed by cookies for brunch.",
+  "- Bicycled for about 30 minutes in the Sankhamul area on my father's bike.",
+  "- Took grandmother to a Japanese restaurant for lunch, which made her happy.",
+  "- Went to a nursery and bought her favorite flower pots.",
+  "",
+  "Classification rules:",
+  "- sentiment=positive for healthy routines, exercise, family care, meaningful outings, kindness, and uplifting activities.",
+  "- sentiment=negative for injuries, accidents, failures/rejections, serious setbacks, conflicts.",
+  "- sentiment=neutral only for notable observations with no clear positive or negative personal impact.",
+  "- If unsure between positive and neutral, prefer positive when the action reflects self-care, family-care, or progress.",
+].join("\n");
+const WEEKLY_HIGHLIGHTS_INSTRUCTION = [
+  "You are generating WEEKLY highlights from 7 daily journal notes.",
+  "Return ONLY valid JSON (no markdown, no backticks).",
+  "Focus on weekly aggregates, counts, and significant events.",
+  "Schema:",
+  "{",
+  '  "literal_bullets": string[],',
+  '  "checks": {',
+  '    "cold_shower": { "done": boolean, "count": number, "evidence": string|null },',
+  '    "morning_meditation": { "done": boolean, "count": number, "minutes_total": number|null, "evidence": string|null },',
+  '    "gym": { "done": boolean, "count": number, "minutes_total": number|null, "body_parts": string[], "evidence": string|null },',
+  '    "evening_meditation": { "done": boolean, "count": number, "minutes_total": number|null, "evidence": string|null },',
+  '    "reading": { "done": boolean, "count": number, "minutes_total": number|null, "evidence": string|null },',
+  '    "special_incidents": [',
+  '      { "text": string, "sentiment": "positive"|"negative"|"neutral" }',
+  '    ]',
+  "  }",
+  "}",
+  "Rules:",
+  "- For literal_bullets: summarize weekly trends e.g. 'Cold showers 7/7 days', 'Gym 4 times (chest, arms)', 'Meditation 30 min avg', 'Read 1 hr/day'.",
+  "- For special_incidents: extract all notable events that stand out from the person's routine.",
+  "",
+  "Classification — learn from these real labeled examples:",
+  "  positive: 'Received a personalized message from indie artist Janisht Joshi.'",
+  "  positive: 'Secret concert of Nepali artist attended on Wednesday.'",
+  "  positive: 'Visited cat cafe with mom on Saturday.'",
+  "  positive: 'Had a healthy lunch with dal bhaat, paneer, and potatoes, followed by cookies for brunch.'",
+  "  positive: 'Bicycled for about 30 minutes in the Sankhamul area on my father's bike.'",
+  "  positive: 'Took grandmother to a Japanese restaurant for lunch, which made her happy.'",
+  "  positive: 'Went to a nursery and bought her favorite flower pots.'",
+  "  negative: 'Rainy storm and scooter slip accident with knee wound on Monday.'",
+  "  negative: 'Visa not granted at German Embassy on Tuesday.'",
+  "  neutral:  'Heavy storm hit on Sunday morning.'",
+  "",
+  "Classification rules (in priority order):",
+  "  - sentiment=positive: meaningful personal experience, emotional joy, rare cultural event, social or family win,",
+  "      achievement, human connection, recognition from someone admired, pleasant surprise.",
+  "  - sentiment=negative: physical harm or injury, official rejection with life consequence (visa, job, exam),",
+  "      financial loss, personal setback, health issue, accident, serious conflict or argument.",
+  "  - sentiment=neutral: environmental or external event that the person merely observed with no direct personal",
+  "      consequence to their body, goals, or emotions (e.g. a storm they saw but weren't hurt by, a news item).",
+  "  - CRITICAL: the same type of event can be different sentiments depending on personal consequence.",
+  "      Example: 'heavy storm' alone = neutral. 'storm caused a scooter accident' = negative.",
+  "  - If unsure between positive and neutral, prefer positive if it involved a personal experience.",
+  "  - If unsure between negative and neutral, prefer negative if there was harm or a concrete failure.",
+].join("\n");
 
 function toDateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
@@ -46,6 +124,60 @@ function formatWeekLabel(weekStart) {
   return `${MONTH_NAMES[s.getMonth()]} ${s.getDate()} – ${MONTH_NAMES[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
 }
 
+function tryParseHighlightsJson(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const trimmed = String(raw).trim();
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start !== -1 && end !== -1 && end > start) {
+      try {
+        return JSON.parse(trimmed.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function getIncidentSentimentMeta(sentiment) {
+  const key = typeof sentiment === "string" ? sentiment.toLowerCase() : "neutral";
+  if (key === "positive") {
+    return {
+      label: "Constructive",
+      bg: "rgba(34,130,80,0.22)",
+      border: "rgba(50,200,110,0.45)",
+      iconBg: "rgba(50,200,110,0.85)",
+      textColor: "rgba(180,255,210,0.92)",
+      subColor: "rgba(140,220,170,0.75)",
+      Icon: CheckCircle2,
+    };
+  }
+  if (key === "negative") {
+    return {
+      label: "Destructive",
+      bg: "rgba(130,30,30,0.25)",
+      border: "rgba(220,70,70,0.45)",
+      iconBg: "rgba(210,60,60,0.85)",
+      textColor: "rgba(255,190,190,0.95)",
+      subColor: "rgba(220,150,150,0.75)",
+      Icon: XCircle,
+    };
+  }
+  return {
+    label: "Neutral",
+    bg: "rgba(40,80,160,0.2)",
+    border: "rgba(80,130,220,0.4)",
+    iconBg: "rgba(70,120,210,0.85)",
+    textColor: "rgba(190,210,255,0.92)",
+    subColor: "rgba(160,185,240,0.7)",
+    Icon: MinusCircle,
+  };
+}
+
 function useDebounce(fn, delay) {
   const timerRef = useRef(null);
   return useCallback((...args) => {
@@ -58,10 +190,13 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
   const key = toDateKey(date);
   const [text, setText] = useState(initialNote ?? "");
   const [isEditing, setIsEditing] = useState(false);
-  const [panel, setPanel] = useState("note"); // 'note' | 'highlights' | 'goals'
+  const [panel, setPanel] = useState("goals"); // 'note' | 'highlights' | 'goals'
   const [goals, setGoals] = useState([]);
   const [goalAdding, setGoalAdding] = useState(false);
   const [newGoalText, setNewGoalText] = useState("");
+  const [goalsSyncLoading, setGoalsSyncLoading] = useState(false);
+  const [goalsSyncErr, setGoalsSyncErr] = useState("");
+  const [dailyIncidentsOpen, setDailyIncidentsOpen] = useState(false);
   const [highlightsLoading, setHighlightsLoading] = useState(false);
   const [highlightsRaw, setHighlightsRaw] = useState("");
   const [highlightsData, setHighlightsData] = useState(initialHighlights ?? null);
@@ -269,6 +404,9 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
     }).catch(() => {});
     setGoalAdding(false);
     setNewGoalText("");
+    setGoalsSyncLoading(false);
+    setGoalsSyncErr("");
+    setDailyIncidentsOpen(false);
     return () => { cancelled = true; };
   }, [key]);
 
@@ -287,7 +425,10 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
   useEffect(() => {
     if (!isActive) {
       setIsEditing(false);
-      setPanel("note");
+      setPanel("goals");
+      setGoalsSyncLoading(false);
+      setGoalsSyncErr("");
+      setDailyIncidentsOpen(false);
       setHighlightsLoading(false);
       setHighlightsErr("");
       abortRef.current?.abort?.();
@@ -340,6 +481,82 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
     toast.success("Goal removed", { style: { fontFamily: "'DM Mono', monospace" } });
   }
 
+  async function runGoalsAutoCheck() {
+    setPanel("goals");
+    setGoalsSyncErr("");
+    if (!hasNote) {
+      toast("Write a note first to auto-check goals.", { style: { fontFamily: "'DM Mono', monospace" } });
+      return;
+    }
+    if (!Array.isArray(goals) || goals.length === 0) {
+      toast("No goals to check for this day.", { style: { fontFamily: "'DM Mono', monospace" } });
+      return;
+    }
+
+    setGoalsSyncLoading(true);
+    try {
+      const goalsList = goals.map((g) => ({ id: g.id, text: g.text }));
+      const promptText = [
+        "Daily note:",
+        text,
+        "",
+        "Goals to verify:",
+        ...goalsList.map((g) => `- [${g.id}] ${g.text}`),
+      ].join("\n");
+
+      const raw = await fetchHighlightsStream({
+        text: promptText,
+        instruction: DAILY_GOALS_AUTOCHECK_INSTRUCTION,
+      });
+      const parsed = tryParseHighlightsJson(raw);
+      const results = Array.isArray(parsed?.results) ? parsed.results : [];
+
+      const byId = new Map();
+      const byText = new Map();
+      for (const r of results) {
+        if (typeof r?.id === "string") byId.set(r.id, !!r.completed);
+        if (typeof r?.text === "string") byText.set(r.text.trim().toLowerCase(), !!r.completed);
+      }
+
+      let changed = 0;
+      const next = goals.map((g) => {
+        const idDecision = byId.get(g.id);
+        const textDecision = byText.get((g.text || "").trim().toLowerCase());
+        const completed = typeof idDecision === "boolean" ? idDecision : textDecision;
+        if (completed === true && !g.done) {
+          changed += 1;
+          return { ...g, done: true };
+        }
+        return g;
+      });
+
+      setGoals(next);
+      await saveGoalsForDay(key, next);
+
+      if (changed > 0) {
+        toast(`Auto-checked ${changed} goal${changed !== 1 ? "s" : ""} ✦`, {
+          style: {
+            background: "#1a0e00",
+            color: "#e8d5b7",
+            border: "1px solid rgba(245,166,35,0.35)",
+            fontFamily: "'DM Mono', monospace",
+            fontSize: "12px",
+            letterSpacing: "0.05em",
+          },
+        });
+      } else {
+        toast("No completed goals were confidently found in the note.", {
+          style: { fontFamily: "'DM Mono', monospace" },
+        });
+      }
+    } catch {
+      setGoalsSyncErr("Could not auto-check goals right now.");
+      toast.error("Auto-check failed.");
+    } finally {
+      setGoalsSyncLoading(false);
+    }
+  }
+
   async function runHighlights(force = false) {
     if (!hasNote) return;
     if (!isActive) onClick();
@@ -376,6 +593,7 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
       let assembled = "";
       const full = await fetchHighlightsStream({
         text,
+        instruction: DAILY_SPECIAL_INCIDENTS_INSTRUCTION,
         signal: ctrl.signal,
         onDelta: (delta) => {
           assembled += delta;
@@ -786,8 +1004,9 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                 <button
                   type="button"
-                  title="Daily goals"
+                  title="Daily goals (double-click to auto-check from note)"
                   onClick={() => setPanel("goals")}
+                  onDoubleClick={(e) => { e.stopPropagation(); runGoalsAutoCheck(); }}
                   style={{
                     background: panel === "goals" ? "rgba(200,40,40,0.18)" : "rgba(255,255,255,0.03)",
                     border: panel === "goals" ? "1px solid rgba(220,70,70,0.65)" : "1px solid rgba(200,60,60,0.55)",
@@ -854,6 +1073,14 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                     <Loader2 size={14} color="rgba(245,166,35,0.65)" style={{ animation: "spin 0.8s linear infinite" }} />
                     <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em", color: "rgba(245,166,35,0.55)" }}>
                       Summarizing…
+                    </span>
+                  </span>
+                )}
+                {goalsSyncLoading && panel === "goals" && (
+                  <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Loader2 size={14} color="rgba(220,70,70,0.75)" style={{ animation: "spin 0.8s linear infinite" }} />
+                    <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em", color: "rgba(240,100,100,0.78)" }}>
+                      Checking goals…
                     </span>
                   </span>
                 )}
@@ -961,30 +1188,102 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
                       </div>
 
                       {/* Special incidents */}
-                      {Array.isArray(highlightsData?.checks?.special_incidents) && highlightsData.checks.special_incidents.length > 0 && (
-                        <div style={{
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          background: "rgba(255,255,255,0.02)",
-                          borderRadius: 12,
-                          padding: "12px 14px",
-                        }}>
+                      {(() => {
+                        const rawIncidents = highlightsData?.checks?.special_incidents;
+                        if (!Array.isArray(rawIncidents) || rawIncidents.length === 0) return null;
+                        const incidents = rawIncidents.map((item) =>
+                          typeof item === "string" ? { text: item, sentiment: "neutral" } : item
+                        );
+                        return (
                           <div style={{
-                            fontFamily: FONT_MONO,
-                            fontSize: 9.5,
-                            letterSpacing: "0.22em",
-                            textTransform: "uppercase",
-                            color: "rgba(245,166,35,0.5)",
-                            marginBottom: 10,
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            background: "rgba(255,255,255,0.02)",
+                            borderRadius: 12,
+                            padding: "12px 14px",
                           }}>
-                            Special incidents
+                            <button
+                              type="button"
+                              onClick={() => setDailyIncidentsOpen((v) => !v)}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 7,
+                                background: "rgba(255,255,255,0.04)",
+                                border: "1px solid rgba(255,255,255,0.12)",
+                                borderRadius: 8,
+                                padding: "6px 12px",
+                                cursor: "pointer",
+                                fontFamily: FONT_MONO,
+                                fontSize: 9.5,
+                                letterSpacing: "0.14em",
+                                textTransform: "uppercase",
+                                color: "rgba(232,213,183,0.7)",
+                              }}
+                            >
+                              <AlertCircle size={12} />
+                              Special Incidents ({incidents.length})
+                              {dailyIncidentsOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            </button>
+
+                            {dailyIncidentsOpen && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+                                {incidents.slice(0, 10).map((inc, idx) => {
+                                  const cfg = getIncidentSentimentMeta(inc.sentiment);
+                                  const { Icon } = cfg;
+                                  return (
+                                    <div
+                                      key={idx}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 14,
+                                        background: cfg.bg,
+                                        border: `1px solid ${cfg.border}`,
+                                        borderRadius: 14,
+                                        padding: "12px 14px",
+                                      }}
+                                    >
+                                      <div style={{
+                                        flexShrink: 0,
+                                        width: 38,
+                                        height: 38,
+                                        borderRadius: "50%",
+                                        background: cfg.iconBg,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        boxShadow: `0 2px 12px ${cfg.border}`,
+                                      }}>
+                                        <Icon size={20} color="#fff" strokeWidth={2.2} />
+                                      </div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{
+                                          fontFamily: FONT_MONO,
+                                          fontSize: 8.5,
+                                          letterSpacing: "0.18em",
+                                          textTransform: "uppercase",
+                                          color: cfg.subColor,
+                                          marginBottom: 3,
+                                        }}>
+                                          {cfg.label}
+                                        </div>
+                                        <div style={{
+                                          fontFamily: FONT_MONO,
+                                          fontSize: 12.5,
+                                          color: cfg.textColor,
+                                          lineHeight: 1.5,
+                                        }}>
+                                          {inc.text}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
-                          <ul style={{ margin: 0, paddingLeft: 18, color: "rgba(232,213,183,0.72)", lineHeight: 1.7 }}>
-                            {highlightsData.checks.special_incidents.slice(0, 8).map((s, idx) => (
-                              <li key={idx} style={{ fontFamily: FONT_MONO, fontSize: 12.5 }}>{s}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {/* Literal bullets */}
                       {Array.isArray(highlightsData?.literal_bullets) && highlightsData.literal_bullets.length > 0 && (
@@ -1038,6 +1337,11 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
               )}
               {panel === "goals" && (
                 <div>
+                  {goalsSyncErr && (
+                    <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: "rgba(220,80,80,0.9)", marginBottom: 10 }}>
+                      {goalsSyncErr}
+                    </div>
+                  )}
                   <div style={{
                     fontFamily: FONT_MONO,
                     fontSize: 10,
@@ -1455,9 +1759,16 @@ export default function WeeklyNotes() {
 
   // ── Weekly goals ───────────────────────────────────────────────
   const [weeklyGoalsOpen, setWeeklyGoalsOpen] = useState(false);
+  const [weeklyHighlightsOpen, setWeeklyHighlightsOpen] = useState(false);
   const [weeklyGoals, setWeeklyGoals] = useState([]);
   const [weeklyGoalAdding, setWeeklyGoalAdding] = useState(false);
   const [newWeeklyGoalText, setNewWeeklyGoalText] = useState("");
+  const [weeklyHighlightsLoading, setWeeklyHighlightsLoading] = useState(false);
+  const [weeklyHighlightsRaw, setWeeklyHighlightsRaw] = useState("");
+  const [weeklyHighlightsData, setWeeklyHighlightsData] = useState(null);
+  const [weeklyHighlightsErr, setWeeklyHighlightsErr] = useState("");
+  const [weeklyIncompleteMsg, setWeeklyIncompleteMsg] = useState("");
+  const [weeklyIncidentsOpen, setWeeklyIncidentsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1467,6 +1778,14 @@ export default function WeeklyNotes() {
     setWeeklyGoalAdding(false);
     setNewWeeklyGoalText("");
     return () => { cancelled = true; };
+  }, [weekKey]);
+
+  useEffect(() => {
+    setWeeklyHighlightsRaw("");
+    setWeeklyHighlightsData(null);
+    setWeeklyHighlightsErr("");
+    setWeeklyIncompleteMsg("");
+    setWeeklyHighlightsLoading(false);
   }, [weekKey]);
 
   function persistWeeklyGoals(updated) {
@@ -1524,6 +1843,93 @@ export default function WeeklyNotes() {
       }, 120);
     } catch {
       toast.error("Import failed — check connection.");
+    }
+  }
+
+  async function runWeeklyHighlights(force = false) {
+    setWeeklyHighlightsOpen(true);
+    setWeeklyHighlightsErr("");
+    setWeeklyIncompleteMsg("");
+    setWeeklyHighlightsRaw("");
+
+    const dayKeys = days.map((d) => toDateKey(d));
+    const weekRowKey = `week:${weekKey}`;
+
+    try {
+      const rowsMap = await fetchNoteRows([...dayKeys, weekRowKey]);
+      const complete = dayKeys.every((k) => ((rowsMap[k]?.note_text || "").trim().length > 0));
+      if (!complete) {
+        setWeeklyHighlightsData(null);
+        setWeeklyIncompleteMsg("Week has not been completed yet. Add notes for all 7 days first.");
+        return;
+      }
+
+      const cachedWeekly = rowsMap[weekRowKey]?.highlights || null;
+      if (cachedWeekly && !force) {
+        setWeeklyHighlightsData(cachedWeekly);
+        return;
+      }
+
+      if (force && cachedWeekly) {
+        toast("Refreshing weekly highlights…", {
+          style: {
+            background: "#1a0e00",
+            color: "#e8d5b7",
+            border: "1px solid rgba(245,166,35,0.25)",
+            fontFamily: "'DM Mono', monospace",
+            fontSize: "12px",
+            letterSpacing: "0.05em",
+          },
+        });
+      }
+
+      const weeklyText = days.map((d) => {
+        const dk = toDateKey(d);
+        const dayName = DAY_NAMES[d.getDay()];
+        const note = (rowsMap[dk]?.note_text || "").trim();
+        return `${dayName} (${dk}):\n${note}`;
+      }).join("\n\n");
+
+      setWeeklyHighlightsLoading(true);
+      let assembled = "";
+      const full = await fetchHighlightsStream({
+        text: weeklyText,
+        instruction: WEEKLY_HIGHLIGHTS_INSTRUCTION,
+        onDelta: (delta) => {
+          assembled += delta;
+          setWeeklyHighlightsRaw((prev) => prev + delta);
+        },
+      });
+
+      const parsed = tryParseHighlightsJson(full || assembled);
+      if (!parsed) {
+        setWeeklyHighlightsErr("Could not parse weekly highlights. Showing raw output.");
+        return;
+      }
+
+      const tagged = {
+        ...parsed,
+        tag: `Week${weekNumber}`,
+        week_start_key: weekKey,
+        week_end_key: weekEndKey,
+      };
+
+      setWeeklyHighlightsData(tagged);
+      await saveHighlightsToDb(weekRowKey, tagged);
+      toast("Weekly highlights ready ✦", {
+        style: {
+          background: "#1a0e00",
+          color: "#e8d5b7",
+          border: "1px solid rgba(245,166,35,0.35)",
+          fontFamily: "'DM Mono', monospace",
+          fontSize: "12px",
+          letterSpacing: "0.05em",
+        },
+      });
+    } catch {
+      setWeeklyHighlightsErr("Failed to generate weekly highlights. Check Groq key/env.");
+    } finally {
+      setWeeklyHighlightsLoading(false);
     }
   }
 
@@ -2021,7 +2427,7 @@ export default function WeeklyNotes() {
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           marginBottom: 24,
-          padding: "14px 18px",
+          padding: "18px 18px",
           borderRadius: 14,
           border: "1px solid rgba(245,166,35,0.16)",
           background: "rgba(245,166,35,0.04)",
@@ -2041,7 +2447,7 @@ export default function WeeklyNotes() {
             <ChevronLeft size={16} />
           </button>
 
-          <div style={{ textAlign: "center" }}>
+          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
             <div style={{
               fontFamily: FONT_SERIF, fontSize: 17,
               color: "#e8d5b7", marginBottom: 4,
@@ -2055,37 +2461,47 @@ export default function WeeklyNotes() {
             }}>
               <Calendar size={10} color="rgba(245,166,35,0.4)" />
               Week {weekNumber}
-              {isCurrentWeek && (
-                <span style={{
-                  background: "rgba(70,200,110,0.1)",
-                  border: "1px solid rgba(70,200,110,0.25)",
-                  borderRadius: 5, padding: "1px 7px",
-                  color: "rgba(70,200,110,0.75)",
-                  fontSize: 8.5,
-                }}>
-                  Current
-                </span>
-              )}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+              <button
+                type="button"
+                title="Weekly goals"
+                onClick={() => setWeeklyGoalsOpen((v) => !v)}
+                style={{
+                  background: weeklyGoalsOpen ? "rgba(200,40,40,0.18)" : "rgba(255,255,255,0.03)",
+                  border: weeklyGoalsOpen ? "1px solid rgba(220,70,70,0.65)" : "1px solid rgba(200,60,60,0.55)",
+                  borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+                  color: weeklyGoalsOpen ? "rgba(255,140,140,0.95)" : "rgba(240,100,100,0.88)",
+                  fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em",
+                  display: "flex", alignItems: "center", gap: 5,
+                  transition: "all 0.15s",
+                  textTransform: "uppercase",
+                }}
+              >
+                <Target size={12} /> Goals
+              </button>
+              <button
+                type="button"
+                title={weeklyHighlightsData ? "Double-click to refresh weekly highlights" : "Generate weekly highlights"}
+                onClick={() => runWeeklyHighlights()}
+                onDoubleClick={(e) => { e.stopPropagation(); runWeeklyHighlights(true); }}
+                style={{
+                  background: weeklyHighlightsOpen ? "rgba(245,166,35,0.14)" : "rgba(255,255,255,0.03)",
+                  border: weeklyHighlightsOpen ? "1px solid rgba(245,166,35,0.38)" : "1px solid rgba(70,200,110,0.45)",
+                  borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+                  color: weeklyHighlightsOpen ? "rgba(245,166,35,0.9)" : "rgba(70,200,110,0.75)",
+                  fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em",
+                  display: "flex", alignItems: "center", gap: 5,
+                  transition: "all 0.15s",
+                  textTransform: "uppercase",
+                }}
+              >
+                <Sparkles size={12} /> Highlights
+              </button>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <button
-              type="button"
-              title="Weekly goals"
-              onClick={() => setWeeklyGoalsOpen((v) => !v)}
-              style={{
-                background: weeklyGoalsOpen ? "rgba(200,40,40,0.18)" : "rgba(255,255,255,0.03)",
-                border: weeklyGoalsOpen ? "1px solid rgba(220,70,70,0.65)" : "1px solid rgba(200,60,60,0.55)",
-                borderRadius: 8, padding: "7px 12px", cursor: "pointer",
-                color: weeklyGoalsOpen ? "rgba(255,140,140,0.95)" : "rgba(240,100,100,0.88)",
-                fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "0.1em",
-                display: "flex", alignItems: "center", gap: 5,
-                transition: "all 0.15s",
-              }}
-            >
-              <Target size={12} /> Goals
-            </button>
             {!isCurrentWeek && (
               <button
                 type="button"
@@ -2253,6 +2669,212 @@ export default function WeeklyNotes() {
                 </tr>
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* ── Weekly Highlights placeholder panel ── */}
+        {weeklyHighlightsOpen && (
+          <div style={{
+            marginBottom: 16,
+            background: "rgba(70,200,110,0.06)",
+            border: "1px solid rgba(70,200,110,0.3)",
+            borderRadius: 14,
+            padding: "18px 20px",
+          }}>
+            <div style={{
+              fontFamily: FONT_MONO,
+              fontSize: 10,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              color: "rgba(70,200,110,0.78)",
+              marginBottom: 10,
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+            }}>
+              <Sparkles size={12} color="rgba(70,200,110,0.9)" />
+              Weekly Highlights · Week {weekNumber}
+            </div>
+            <div style={{
+              fontFamily: FONT_MONO,
+              fontSize: 12,
+              lineHeight: 1.8,
+              color: "rgba(232,213,183,0.62)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              background: "rgba(255,255,255,0.02)",
+              borderRadius: 12,
+              padding: "12px 14px",
+            }}>
+              {weeklyHighlightsLoading ? (
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                  <Loader2 size={14} color="rgba(70,200,110,0.85)" style={{ animation: "spin 0.8s linear infinite" }} />
+                  <span>Summarizing week…</span>
+                </div>
+              ) : weeklyIncompleteMsg ? (
+                <span style={{ color: "rgba(245,166,35,0.85)" }}>{weeklyIncompleteMsg}</span>
+              ) : weeklyHighlightsErr ? (
+                <span style={{ color: "rgba(220,80,80,0.9)" }}>{weeklyHighlightsErr}</span>
+              ) : weeklyHighlightsData ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    alignSelf: "flex-start",
+                    border: "1px solid rgba(70,200,110,0.25)",
+                    background: "rgba(70,200,110,0.08)",
+                    borderRadius: 999,
+                    padding: "2px 10px",
+                    fontSize: 10,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: "rgba(70,200,110,0.92)",
+                  }}>
+                    {weeklyHighlightsData.tag || `Week${weekNumber}`}
+                  </div>
+                  {Array.isArray(weeklyHighlightsData.literal_bullets) && weeklyHighlightsData.literal_bullets.length > 0 && (
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {weeklyHighlightsData.literal_bullets.slice(0, 10).map((b, idx) => (
+                        <li key={idx} style={{ marginBottom: 5, color: "rgba(232,213,183,0.85)" }}>{b}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {(() => {
+                    const rawIncidents = weeklyHighlightsData?.checks?.special_incidents;
+                    if (!rawIncidents || !rawIncidents.length) return null;
+
+                    // normalise: model may return strings (old schema) or { text, sentiment }
+                    const incidents = rawIncidents.map((item) =>
+                      typeof item === "string"
+                        ? { text: item, sentiment: "neutral" }
+                        : item
+                    );
+
+                    const sentimentConfig = {
+                      positive: {
+                        label: "Constructive",
+                        bg: "rgba(34,130,80,0.22)",
+                        border: "rgba(50,200,110,0.45)",
+                        iconBg: "rgba(50,200,110,0.85)",
+                        textColor: "rgba(180,255,210,0.92)",
+                        subColor: "rgba(140,220,170,0.75)",
+                        Icon: CheckCircle2,
+                      },
+                      negative: {
+                        label: "Destructive",
+                        bg: "rgba(130,30,30,0.25)",
+                        border: "rgba(220,70,70,0.45)",
+                        iconBg: "rgba(210,60,60,0.85)",
+                        textColor: "rgba(255,190,190,0.95)",
+                        subColor: "rgba(220,150,150,0.75)",
+                        Icon: XCircle,
+                      },
+                      neutral: {
+                        label: "Neutral",
+                        bg: "rgba(40,80,160,0.2)",
+                        border: "rgba(80,130,220,0.4)",
+                        iconBg: "rgba(70,120,210,0.85)",
+                        textColor: "rgba(190,210,255,0.92)",
+                        subColor: "rgba(160,185,240,0.7)",
+                        Icon: MinusCircle,
+                      },
+                    };
+
+                    return (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setWeeklyIncidentsOpen((v) => !v)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 7,
+                            background: "rgba(255,255,255,0.04)",
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            borderRadius: 8,
+                            padding: "6px 12px",
+                            cursor: "pointer",
+                            fontFamily: FONT_MONO,
+                            fontSize: 9.5,
+                            letterSpacing: "0.14em",
+                            textTransform: "uppercase",
+                            color: "rgba(232,213,183,0.7)",
+                          }}
+                        >
+                          <AlertCircle size={12} />
+                          Special Incidents ({incidents.length})
+                          {weeklyIncidentsOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        </button>
+
+                        {weeklyIncidentsOpen && (
+                          <div style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                            marginTop: 12,
+                          }}>
+                            {incidents.map((inc, idx) => {
+                              const cfg = sentimentConfig[inc.sentiment] || sentimentConfig.neutral;
+                              const { Icon } = cfg;
+                              return (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 14,
+                                    background: cfg.bg,
+                                    border: `1px solid ${cfg.border}`,
+                                    borderRadius: 14,
+                                    padding: "12px 14px",
+                                  }}
+                                >
+                                  <div style={{
+                                    flexShrink: 0,
+                                    width: 38,
+                                    height: 38,
+                                    borderRadius: "50%",
+                                    background: cfg.iconBg,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    boxShadow: `0 2px 12px ${cfg.border}`,
+                                  }}>
+                                    <Icon size={20} color="#fff" strokeWidth={2.2} />
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{
+                                      fontFamily: FONT_MONO,
+                                      fontSize: 8.5,
+                                      letterSpacing: "0.18em",
+                                      textTransform: "uppercase",
+                                      color: cfg.subColor,
+                                      marginBottom: 3,
+                                    }}>
+                                      {cfg.label}
+                                    </div>
+                                    <div style={{
+                                      fontFamily: FONT_MONO,
+                                      fontSize: 12.5,
+                                      color: cfg.textColor,
+                                      lineHeight: 1.5,
+                                    }}>
+                                      {inc.text}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                "Click Highlights to generate weekly highlights."
+              )}
+            </div>
           </div>
         )}
 

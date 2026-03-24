@@ -44,7 +44,9 @@ const HIGHLIGHTS_FALLBACK = [
   '    "morning_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
   '    "gym": { "done": boolean, "minutes": number|null, "body_parts": string[], "evidence": string|null },',
   '    "evening_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
-  '    "special_incidents": string[]',
+  '    "special_incidents": [',
+  '      { "text": string, "sentiment": "positive"|"negative"|"neutral" }',
+  '    ]',
   '  }',
   '}',
   '',
@@ -55,6 +57,9 @@ const HIGHLIGHTS_FALLBACK = [
   '- "evening_meditation": if meditation is mentioned later in the day, set done and minutes accordingly.',
   '- For gym, if body parts are mentioned, put them into "body_parts" (e.g. ["forearms","triceps"]).',
   '- "special_incidents" should include unusual events, messages, storms, accidents, visits, etc.',
+  '- sentiment=positive: meaningful personal experience, joy, wins, good surprises.',
+  '- sentiment=negative: harm/injury, accidents, failures, rejections, setbacks.',
+  '- sentiment=neutral: notable observation with no direct personal consequence.',
 ].join('\n')
 
 const CHAT_SYSTEM_FALLBACK = [
@@ -119,7 +124,7 @@ export default defineConfig(({ mode }) => {
             req.on('data', (chunk) => { body += chunk })
             req.on('end', async () => {
               try {
-                const { text } = JSON.parse(body || '{}')
+                const { text, instruction } = JSON.parse(body || '{}')
                 if (!text || typeof text !== 'string') {
                   res.statusCode = 400
                   res.setHeader('Content-Type', 'application/json')
@@ -135,7 +140,10 @@ export default defineConfig(({ mode }) => {
                 const groq = new Groq({ apiKey: groqApiKey })
 
                 const systemPromptBase = await getDevPrompt('highlights_system', supabaseUrl, supabaseKey, HIGHLIGHTS_FALLBACK)
-                const prompt = `${systemPromptBase}\n\nJournal note:\n${text}`
+                const extra = typeof instruction === 'string' ? instruction.trim() : ''
+                const prompt = extra
+                  ? `${systemPromptBase}\n\nAdditional instruction:\n${extra}\n\nJournal note:\n${text}`
+                  : `${systemPromptBase}\n\nJournal note:\n${text}`
 
                 const chatCompletion = await groq.chat.completions.create({
                   messages: [{ role: 'user', content: prompt }],

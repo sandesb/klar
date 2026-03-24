@@ -24,7 +24,9 @@ const HIGHLIGHTS_FALLBACK = [
   '    "morning_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
   '    "gym": { "done": boolean, "minutes": number|null, "body_parts": string[], "evidence": string|null },',
   '    "evening_meditation": { "done": boolean, "minutes": number|null, "evidence": string|null },',
-  '    "special_incidents": string[]',
+  '    "special_incidents": [',
+  '      { "text": string, "sentiment": "positive"|"negative"|"neutral" }',
+  "    ]",
   "  }",
   "}",
   "",
@@ -35,6 +37,9 @@ const HIGHLIGHTS_FALLBACK = [
   '- "evening_meditation": if meditation is mentioned later in the day, set done and minutes accordingly.',
   '- For gym, if body parts are mentioned, put them into "body_parts" (e.g. ["forearms","triceps"]).',
   '- "special_incidents" should include unusual events, messages, storms, accidents, visits, etc.',
+  '- sentiment=positive: meaningful personal experience, joy, wins, good surprises.',
+  '- sentiment=negative: harm/injury, accidents, failures, rejections, setbacks.',
+  '- sentiment=neutral: notable observation with no direct personal consequence.',
 ].join("\n");
 
 async function getPrompt(key, supabaseUrl, supabaseKey, fallback) {
@@ -96,6 +101,7 @@ exports.handler = async function handler(event) {
     }
 
     const text = parsed.text;
+    const instruction = typeof parsed.instruction === "string" ? parsed.instruction.trim() : "";
     if (!text || typeof text !== "string") {
       return {
         statusCode: 400,
@@ -108,7 +114,9 @@ exports.handler = async function handler(event) {
     const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
 
     const systemPrompt = await getPrompt("highlights_system", supabaseUrl, supabaseKey, HIGHLIGHTS_FALLBACK);
-    const prompt = `${systemPrompt}\n\nJournal note:\n${text}`;
+    const prompt = instruction
+      ? `${systemPrompt}\n\nAdditional instruction:\n${instruction}\n\nJournal note:\n${text}`
+      : `${systemPrompt}\n\nJournal note:\n${text}`;
 
     const groq = new Groq({ apiKey });
     const chatCompletion = await groq.chat.completions.create({
