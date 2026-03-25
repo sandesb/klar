@@ -1764,6 +1764,8 @@ export default function WeeklyNotes() {
   const [weeklyGoalAdding, setWeeklyGoalAdding] = useState(false);
   const [newWeeklyGoalText, setNewWeeklyGoalText] = useState("");
   const [weeklyGoalsReuseLoading, setWeeklyGoalsReuseLoading] = useState(false);
+  const [weeklyGoalsAutoCheckLoading, setWeeklyGoalsAutoCheckLoading] = useState(false);
+  const [weeklyGoalsAutoCheckErr, setWeeklyGoalsAutoCheckErr] = useState("");
   const [weeklyHighlightsLoading, setWeeklyHighlightsLoading] = useState(false);
   const [weeklyHighlightsRaw, setWeeklyHighlightsRaw] = useState("");
   const [weeklyHighlightsData, setWeeklyHighlightsData] = useState(null);
@@ -1880,6 +1882,107 @@ export default function WeeklyNotes() {
       toast.error("Reuse failed — check connection.");
     } finally {
       setWeeklyGoalsReuseLoading(false);
+    }
+  }
+
+  async function handleAutoCheckWeeklyGoalsFromDaily() {
+    if (weeklyGoalsAutoCheckLoading) return;
+    setWeeklyGoalsAutoCheckErr("");
+    setWeeklyGoalsAutoCheckLoading(true);
+
+    try {
+      if (!Array.isArray(weeklyGoals) || weeklyGoals.length === 0) {
+        toast("No weekly goals to auto-check.", { style: { fontFamily: "'DM Mono', monospace" } });
+        return;
+      }
+
+      const dayKeys = days.map((d) => toDateKey(d));
+      const dailyGoalsByDay = {};
+
+      for (const dk of dayKeys) {
+        dailyGoalsByDay[dk] = await loadGoalsForDay(dk);
+      }
+
+      const resultsSchemaText = JSON.stringify(
+        { results: [{ id: "string", completed: true, evidence: null }] },
+        null,
+        2
+      );
+
+      const aiText = {
+        weeklyGoals: weeklyGoals.map((g) => ({ id: g.id, text: g.text })),
+        dailyGoalsByDay,
+      };
+
+      const instruction = [
+        "You are verifying which weekly goals were completed somewhere during that week.",
+        "A weekly goal is considered COMPLETED if there exists at least one day in dailyGoalsByDay where a daily goal item matches (by meaning or wording) the weekly goal text AND that daily goal item has done=true.",
+        "If the weekly goal appears only with done=false (or doesn't appear at all), completed=false.",
+        "Return ONLY valid JSON matching this shape:",
+        resultsSchemaText,
+        "",
+        "Rules:",
+        "- Use the provided weekly goal ids exactly in results[].id.",
+        "- completed=true ONLY when there is clear evidence of done=true for a matching daily goal.",
+        "- evidence can be a short string describing the day key(s) where done=true was found; or null if not found.",
+      ].join("\n");
+
+      // Pass as plain text so the model doesn't get confused by formatting.
+      const promptText = [
+        "weeklyGoals:",
+        JSON.stringify(weeklyGoals.map((g) => ({ id: g.id, text: g.text })), null, 2),
+        "",
+        "dailyGoalsByDay:",
+        JSON.stringify(dailyGoalsByDay, null, 2),
+      ].join("\n");
+
+      const raw = await fetchHighlightsStream({
+        text: promptText,
+        instruction,
+      });
+
+      const parsed = tryParseHighlightsJson(raw);
+      const results = Array.isArray(parsed?.results) ? parsed.results : [];
+
+      const completedById = new Map();
+      for (const r of results) {
+        if (typeof r?.id === "string") completedById.set(r.id, !!r.completed);
+      }
+
+      let changed = 0;
+      const next = weeklyGoals.map((g) => {
+        const completed = completedById.get(g.id);
+        if (completed === true && !g.done) {
+          changed += 1;
+          return { ...g, done: true };
+        }
+        return g;
+      });
+
+      setWeeklyGoals(next);
+      await saveWeeklyGoals(weekKey, next);
+
+      if (changed > 0) {
+        toast(`Auto-checked ${changed} weekly goal${changed !== 1 ? "s" : ""} ✦`, {
+          style: {
+            background: "#1a0e00",
+            color: "#e8d5b7",
+            border: "1px solid rgba(245,166,35,0.35)",
+            fontFamily: "'DM Mono', monospace",
+            fontSize: "12px",
+            letterSpacing: "0.05em",
+          },
+        });
+      } else {
+        toast("No confidently completed weekly goals found.", {
+          style: { fontFamily: "'DM Mono', monospace" },
+        });
+      }
+    } catch {
+      setWeeklyGoalsAutoCheckErr("Could not auto-check weekly goals right now.");
+      toast.error("Weekly goals auto-check failed.");
+    } finally {
+      setWeeklyGoalsAutoCheckLoading(false);
     }
   }
 
@@ -2503,7 +2606,15 @@ export default function WeeklyNotes() {
               <button
                 type="button"
                 title="Weekly goals"
-                onClick={() => setWeeklyGoalsOpen((v) => !v)}
+                onClick={() => {
+                  if (weeklyGoalsAutoCheckLoading) return;
+                  setWeeklyGoalsOpen((v) => !v);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setWeeklyGoalsOpen(true);
+                  handleAutoCheckWeeklyGoalsFromDaily();
+                }}
                 style={{
                   background: weeklyGoalsOpen ? "rgba(200,40,40,0.18)" : "rgba(255,255,255,0.03)",
                   border: weeklyGoalsOpen ? "1px solid rgba(220,70,70,0.65)" : "1px solid rgba(200,60,60,0.55)",
@@ -2515,7 +2626,16 @@ export default function WeeklyNotes() {
                   textTransform: "uppercase",
                 }}
               >
-                <Target size={12} /> Goals
+                {weeklyGoalsAutoCheckLoading ? (
+                  <>
+                    <Loader2 size={12} color="rgba(220,70,70,0.75)" style={{ animation: "spin 0.8s linear infinite" }} />
+                    Checking…
+                  </>
+                ) : (
+                  <>
+                    <Target size={12} /> Goals
+                  </>
+                )}
               </button>
               <button
                 type="button"
@@ -2651,6 +2771,17 @@ export default function WeeklyNotes() {
                 </button>
               </div>
             </div>
+
+            {weeklyGoalsAutoCheckErr && (
+              <div style={{
+                fontFamily: FONT_MONO,
+                fontSize: 11.5,
+                color: "rgba(220,80,80,0.9)",
+                marginBottom: 10,
+              }}>
+                {weeklyGoalsAutoCheckErr}
+              </div>
+            )}
 
             {/* Goals table */}
             <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT_MONO, fontSize: 12 }}>
