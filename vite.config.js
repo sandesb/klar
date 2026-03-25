@@ -168,6 +168,150 @@ export default defineConfig(({ mode }) => {
             })
           })
 
+          server.middlewares.use('/api/goals-autocheck', async (req, res) => {
+            const origin = req.headers.origin || '*'
+            res.setHeader('Access-Control-Allow-Origin', origin)
+            res.setHeader('Vary', 'Origin')
+            res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+            res.setHeader('Access-Control-Max-Age', '86400')
+
+            if (req.method === 'OPTIONS') {
+              res.statusCode = 204
+              res.end()
+              return
+            }
+
+            if (req.method !== 'POST') {
+              res.statusCode = 405
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: 'Method Not Allowed' }))
+              return
+            }
+
+            if (!groqApiKey) {
+              res.statusCode = 500
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: 'Missing Groq API key in .env (GROQ_API_KEY or groq)' }))
+              return
+            }
+
+            let body = ''
+            req.on('data', (chunk) => { body += chunk })
+            req.on('end', async () => {
+              function tryParseJson(raw) {
+                if (!raw) return null
+                try {
+                  return JSON.parse(raw)
+                } catch {
+                  const trimmed = String(raw).trim()
+                  const start = trimmed.indexOf('{')
+                  const end = trimmed.lastIndexOf('}')
+                  if (start !== -1 && end !== -1 && end > start) {
+                    try {
+                      return JSON.parse(trimmed.slice(start, end + 1))
+                    } catch {}
+                  }
+                  return null
+                }
+              }
+
+              try {
+                const parsed = JSON.parse(body || '{}')
+                const mode = parsed?.mode
+
+                const note_text = typeof parsed?.note_text === 'string' ? parsed.note_text : ''
+                const goals = Array.isArray(parsed?.goals) ? parsed.goals : []
+                const weekly_goals = Array.isArray(parsed?.weekly_goals) ? parsed.weekly_goals : []
+                const daily_goals_by_day =
+                  parsed?.daily_goals_by_day && typeof parsed.daily_goals_by_day === 'object' ? parsed.daily_goals_by_day : {}
+
+                const systemDaily = [
+                  'You verify daily goals based only on the journal note text.',
+                  'Return ONLY valid JSON (no markdown, no backticks).',
+                  'Schema:',
+                  '{',
+                  '  "results": [ { "id": string, "completed": boolean, "evidence": string|null } ]',
+                  '}',
+                  'Rules:',
+                  '- Use each goal id exactly as provided.',
+                  '- Set completed=true only when the note explicitly indicates the goal was done/completed.',
+                  '- If ambiguous or only planned, set completed=false.',
+                ].join('\\n')
+
+                const systemWeekly = [
+                  'You verify weekly goals based only on daily goals data.',
+                  'Return ONLY valid JSON (no markdown, no backticks).',
+                  'Schema:',
+                  '{',
+                  '  "results": [ { "id": string, "completed": boolean, "evidence": string|null } ]',
+                  '}',
+                  'Rules:',
+                  '- Use each weekly goal id exactly as provided.',
+                  '- A weekly goal is completed if there exists at least one day where a daily goal semantically matches and has done=true.',
+                  '- If only done=false or no matching daily goal exists, set completed=false.',
+                ].join('\\n')
+
+                let systemPrompt = ''
+                let userPrompt = ''
+
+                if (mode === 'daily') {
+                  systemPrompt = systemDaily
+                  userPrompt = [
+                    'Journal note:',
+                    note_text,
+                    '',
+                    'Goals to verify:',
+                    ...goals.map((g) => `- [${g.id}] ${g.text}`),
+                    '',
+                    'Return JSON only.',
+                  ].join('\\n')
+                } else if (mode === 'weekly') {
+                  systemPrompt = systemWeekly
+                  userPrompt = [
+                    'Weekly goals (id + text):',
+                    JSON.stringify(weekly_goals, null, 2),
+                    '',
+                    'Daily goals by day (each daily goal has done boolean):',
+                    JSON.stringify(daily_goals_by_day, null, 2),
+                    '',
+                    'Return JSON only.',
+                  ].join('\\n')
+                } else {
+                  res.statusCode = 400
+                  res.setHeader('Content-Type', 'application/json')
+                  res.end(JSON.stringify({ error: "Invalid mode. Use 'daily' or 'weekly'." }))
+                  return
+                }
+
+                const groq = new Groq({ apiKey: groqApiKey })
+                const completion = await groq.chat.completions.create({
+                  model: 'openai/gpt-oss-120b',
+                  messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                  ],
+                  temperature: 0.2,
+                  max_completion_tokens: 700,
+                  top_p: 1,
+                  stream: false,
+                  reasoning_effort: 'medium',
+                })
+
+                const raw = completion?.choices?.[0]?.message?.content ?? ''
+                const parsedJson = tryParseJson(raw)
+
+                res.statusCode = 200
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ raw, parsed: parsedJson }))
+              } catch (e) {
+                res.statusCode = 500
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ error: 'Goals auto-check failed', details: String(e?.message || e) }))
+              }
+            })
+          })
+
           server.middlewares.use('/api/chat', async (req, res) => {
             // CORS (for live deployments where the client/origin differs)
             const origin = req.headers.origin || '*'

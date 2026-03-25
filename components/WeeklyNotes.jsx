@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, P
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
+import { verifyGoalsAutoCheck } from "../utils/groqGoalsAutoCheck.js";
 import { fetchNoteRows, saveNoteText, saveHighlights as saveHighlightsToDb } from "../utils/notesStorage.js";
 import { fetchChatCompletion } from "../utils/groqChat.js";
 import { fetchAllPrompts, upsertPrompt, uploadNoteImage, deleteNoteImage, NOTE_IMG_BASE, createChatThread, fetchLatestChatThread, fetchChatThreadsList, fetchChatThreadById, upsertChatThreadMessages, deleteChatThreadById } from "../supabaseClient.js";
@@ -504,12 +505,13 @@ function DayCard({ date, isToday, isActive, onClick, initialNote, initialHighlig
         ...goalsList.map((g) => `- [${g.id}] ${g.text}`),
       ].join("\n");
 
-      const raw = await fetchHighlightsStream({
-        text: promptText,
-        instruction: DAILY_GOALS_AUTOCHECK_INSTRUCTION,
+      const aiResp = await verifyGoalsAutoCheck({
+        mode: "daily",
+        note_text: text,
+        goals: goalsList,
       });
-      const parsed = tryParseHighlightsJson(raw);
-      const results = Array.isArray(parsed?.results) ? parsed.results : [];
+      console.log("Daily goals auto-check raw response:", aiResp?.raw);
+      const results = Array.isArray(aiResp?.parsed?.results) ? aiResp.parsed.results : [];
 
       const byId = new Map();
       const byText = new Map();
@@ -1936,13 +1938,13 @@ export default function WeeklyNotes() {
         JSON.stringify(dailyGoalsByDay, null, 2),
       ].join("\n");
 
-      const raw = await fetchHighlightsStream({
-        text: promptText,
-        instruction,
+      const aiResp = await verifyGoalsAutoCheck({
+        mode: "weekly",
+        weekly_goals: weeklyGoals.map((g) => ({ id: g.id, text: g.text })),
+        daily_goals_by_day: dailyGoalsByDay,
       });
-
-      const parsed = tryParseHighlightsJson(raw);
-      const results = Array.isArray(parsed?.results) ? parsed.results : [];
+      console.log("Weekly goals auto-check raw response:", aiResp?.raw);
+      const results = Array.isArray(aiResp?.parsed?.results) ? aiResp.parsed.results : [];
 
       const completedById = new Map();
       for (const r of results) {
