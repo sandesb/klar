@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, Plus, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon, Trash2, Target, Circle, CircleCheck, CheckCircle2, XCircle, MinusCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Calendar, PenLine, Check, Clock, Plus, X, Sparkles, Loader2, MessageSquare, Send, Mic, Square, Volume2, VolumeX, Camera, Settings, ImageIcon, Trash2, Target, Circle, CircleCheck, CheckCircle2, XCircle, MinusCircle, AlertCircle, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { fetchHighlightsStream } from "../utils/groqHighlights.js";
@@ -1763,6 +1763,7 @@ export default function WeeklyNotes() {
   const [weeklyGoals, setWeeklyGoals] = useState([]);
   const [weeklyGoalAdding, setWeeklyGoalAdding] = useState(false);
   const [newWeeklyGoalText, setNewWeeklyGoalText] = useState("");
+  const [weeklyGoalsReuseLoading, setWeeklyGoalsReuseLoading] = useState(false);
   const [weeklyHighlightsLoading, setWeeklyHighlightsLoading] = useState(false);
   const [weeklyHighlightsRaw, setWeeklyHighlightsRaw] = useState("");
   const [weeklyHighlightsData, setWeeklyHighlightsData] = useState(null);
@@ -1843,6 +1844,42 @@ export default function WeeklyNotes() {
       }, 120);
     } catch {
       toast.error("Import failed — check connection.");
+    }
+  }
+
+  async function handleReusePreviousWeekGoals() {
+    setWeeklyGoalsReuseLoading(true);
+    try {
+      const prevStart = new Date(weekStart);
+      prevStart.setHours(0, 0, 0, 0);
+      prevStart.setDate(prevStart.getDate() - 7);
+      const prevKey = toDateKey(prevStart);
+
+      const prevGoals = await loadWeeklyGoals(prevKey);
+      if (!Array.isArray(prevGoals) || prevGoals.length === 0) {
+        toast("No weekly goals found for the previous week.", {
+          style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.35)", fontFamily: "'DM Mono', monospace", fontSize: "12px" },
+        });
+        return;
+      }
+
+      // Create a fresh list for this week (keep text, reset done=false).
+      const reused = prevGoals.map((g) => ({
+        id: createGoalId(),
+        text: g?.text ?? "",
+        done: false,
+      })).filter((g) => g.text.trim().length > 0);
+
+      setWeeklyGoals(reused);
+      await saveWeeklyGoals(weekKey, reused);
+
+      toast("Reused previous week goals ✦", {
+        style: { background: "#1a0e00", color: "#e8d5b7", border: "1px solid rgba(245,166,35,0.35)", fontFamily: "'DM Mono', monospace", fontSize: "12px", letterSpacing: "0.05em" },
+      });
+    } catch {
+      toast.error("Reuse failed — check connection.");
+    } finally {
+      setWeeklyGoalsReuseLoading(false);
     }
   }
 
@@ -2560,6 +2597,39 @@ export default function WeeklyNotes() {
                 Weekly Goals · Week {weekNumber}
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button
+                  type="button"
+                  title="Reuse weekly goals from previous week"
+                  onClick={handleReusePreviousWeekGoals}
+                  disabled={weeklyGoalsReuseLoading}
+                  style={{
+                    background: "rgba(255,255,255,0.03)",
+                    border: weeklyGoalsReuseLoading ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(245,166,35,0.35)",
+                    borderRadius: 8, padding: "5px 11px", cursor: weeklyGoalsReuseLoading ? "not-allowed" : "pointer",
+                    color: weeklyGoalsReuseLoading ? "rgba(232,213,183,0.35)" : "rgba(245,166,35,0.75)",
+                    fontFamily: FONT_MONO, fontSize: 9.5, letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    display: "flex", alignItems: "center", gap: 5,
+                    transition: "all 0.15s",
+                    opacity: weeklyGoalsReuseLoading ? 0.65 : 1,
+                  }}
+                  onMouseEnter={e => {
+                    if (weeklyGoalsReuseLoading) return;
+                    e.currentTarget.style.borderColor = "rgba(245,166,35,0.55)";
+                    e.currentTarget.style.color = "rgba(245,166,35,0.95)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = weeklyGoalsReuseLoading ? "rgba(255,255,255,0.08)" : "rgba(245,166,35,0.35)";
+                    e.currentTarget.style.color = weeklyGoalsReuseLoading ? "rgba(232,213,183,0.35)" : "rgba(245,166,35,0.75)";
+                  }}
+                >
+                  {weeklyGoalsReuseLoading ? (
+                    <Loader2 size={12} color="rgba(245,166,35,0.75)" style={{ animation: "spin 0.8s linear infinite" }} />
+                  ) : (
+                    <RotateCcw size={12} />
+                  )}
+                  Reuse
+                </button>
                 <button
                   type="button"
                   title="Import these goals into every day this week"
